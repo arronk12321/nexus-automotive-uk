@@ -419,19 +419,33 @@ const PortalApp = (() => {
       const ref = storage.ref(filePath);
       try {
         await new Promise((resolve, reject) => {
-          const task = ref.put(file);
+          const task = ref.put(file, { contentType: 'application/octet-stream' });
+          let lastBytes = 0;
+          let stallTimer = null;
+
+          const resetStallTimer = () => {
+            clearTimeout(stallTimer);
+            stallTimer = setTimeout(() => {
+              task.cancel();
+              reject(new Error('Upload timed out — CORS or network issue. Please try again or contact support.'));
+            }, 30000);
+          };
+          resetStallTimer();
+
           task.on('state_changed',
             (snap) => {
-              const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
-              setStatus(`🤖 Uploading ECU file... ${pct}%`, 'info');
+              if (snap.bytesTransferred > lastBytes) { lastBytes = snap.bytesTransferred; resetStallTimer(); }
+              const pct = snap.totalBytes > 0 ? Math.round((snap.bytesTransferred / snap.totalBytes) * 100) : 0;
+              setStatus(`🤖 Uploading ECU file... ${pct}% (${snap.bytesTransferred}/${snap.totalBytes} bytes) — state: ${snap.state}`, 'info');
+              console.log('Upload snap:', snap.state, snap.bytesTransferred, snap.totalBytes);
             },
-            (err) => reject(err),
-            () => resolve(task.snapshot)
+            (err) => { clearTimeout(stallTimer); console.error('Storage upload error:', err.code, err.message, err.serverResponse_); reject(err); },
+            () => { clearTimeout(stallTimer); resolve(task.snapshot); }
           );
         });
       } catch(storageErr) {
         console.error('Storage error:', storageErr);
-        setStatus('❌ File upload failed: ' + (storageErr.message || 'Storage permissions error. Please contact support.'), 'error');
+        setStatus('❌ ' + (storageErr.message || storageErr.code || 'File upload failed — Storage error. Please contact support.'), 'error');
         btn.disabled = false;
         return;
       }
@@ -521,7 +535,7 @@ const PortalApp = (() => {
 
     } catch(err) {
       console.error('Order submit error:', err);
-      setStatus('❌ Error submitting order. Please try again.', 'error');
+      setStatus('❌ ' + (err.message || err.code || 'Error submitting order — check Firestore rules.'), 'error');
       btn.disabled = false;
     }
   }
