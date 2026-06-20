@@ -152,7 +152,7 @@ const PortalApp = (() => {
     if (password.length < 8) { err.textContent = 'Password must be at least 8 characters'; btn.disabled = false; btn.querySelector('span').textContent = 'Create Account'; return; }
     try {
       const cred = await auth.createUserWithEmailAndPassword(email, password);
-      await db.collection('users').doc(cred.user.uid).set({ firstName, lastName, email, phone, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+      await db.collection('users').doc(cred.user.uid).set({ firstName, lastName, email, phone, createdAt: new Date() });
     } catch(ex) {
       err.textContent = friendlyAuthError(ex.code);
       btn.disabled = false; btn.querySelector('span').textContent = 'Create Account';
@@ -214,7 +214,7 @@ const PortalApp = (() => {
   async function loadOrders() {
     if (!currentUser) return;
     try {
-      const snap = await db.collection('orders').where('userId', '==', currentUser.uid).orderBy('createdAt', 'desc').get();
+      const snap = await db.collection('orders').where('userId', '==', currentUser.uid).get();
       allOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       renderDashboard();
       renderRecentOrders();
@@ -519,8 +519,8 @@ const PortalApp = (() => {
         status: orderStatus,
         price: null,
         adminNotes: '',
-        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-        completedAt: orderStatus === 'completed' ? firebase.firestore.FieldValue.serverTimestamp() : null
+        createdAt: new Date(),
+        completedAt: orderStatus === 'completed' ? new Date() : null
       };
 
       const docRef = await Promise.race([
