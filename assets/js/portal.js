@@ -75,6 +75,12 @@ const PortalApp = (() => {
     }
   }
 
+  const ADMIN_EMAILS = ['kostileka@gmail.com'];
+
+  function isAdmin() {
+    return currentUser && ADMIN_EMAILS.includes(currentUser.email.toLowerCase());
+  }
+
   function showPortal() {
     const name = userProfile.firstName || currentUser.email.split('@')[0];
     document.getElementById('welcomeName').textContent = name;
@@ -82,7 +88,21 @@ const PortalApp = (() => {
     document.getElementById('sidebarEmail').textContent = currentUser.email;
     document.getElementById('sidebarAvatar').textContent = (userProfile.firstName || currentUser.email)[0].toUpperCase();
     document.getElementById('headerUserName').textContent = name;
-    document.getElementById('headerRight').style.display = 'flex';
+
+    // Show admin badge & link if admin
+    const headerRight = document.getElementById('headerRight');
+    headerRight.style.display = 'flex';
+    const existingBadge = document.getElementById('adminHeaderBadge');
+    if (existingBadge) existingBadge.remove();
+    if (isAdmin()) {
+      const badge = document.createElement('a');
+      badge.id = 'adminHeaderBadge';
+      badge.href = 'admin.html';
+      badge.textContent = 'ADMIN';
+      badge.style.cssText = 'background:#e53935;color:#fff;font-size:0.7rem;font-weight:700;padding:4px 10px;border-radius:4px;letter-spacing:1px;text-decoration:none;margin-right:4px';
+      headerRight.insertBefore(badge, headerRight.firstChild);
+    }
+
     document.getElementById('authScreen').classList.add('hidden');
     document.getElementById('portalDashboard').classList.remove('hidden');
     loadOrders();
@@ -395,9 +415,16 @@ const PortalApp = (() => {
 
     try {
       // 1. Upload original file to Storage
-      const filePath = `orders/${currentUser.uid}/${Date.now()}_${file.name}`;
+      const filePath = `ecu-files/${currentUser.uid}/${Date.now()}_${file.name}`;
       const ref = storage.ref(filePath);
-      await ref.put(file);
+      try {
+        await ref.put(file);
+      } catch(storageErr) {
+        console.error('Storage error:', storageErr);
+        setStatus('❌ File upload failed: Storage permissions not configured. Please contact support.', 'error');
+        btn.disabled = false;
+        return;
+      }
       const originalFileUrl = await ref.getDownloadURL();
       setStatus('🤖 Running AI analysis...', 'info');
 
