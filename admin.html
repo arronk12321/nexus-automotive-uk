@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Portal — Nexus Automotive UK</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <link rel="stylesheet" href="assets/css/portal.css">
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
+</head>
+<body class="portal-body admin-body">
+
+  <header class="portal-header">
+    <div class="portal-header-inner">
+      <a href="index.html" class="portal-logo"><span class="logo-n">N</span>EXUS <span class="logo-tag">ADMIN PORTAL</span></a>
+      <div style="display:flex;align-items:center;gap:12px">
+        <span style="font-size:0.75rem;background:rgba(244,67,54,0.12);color:#f44336;border:1px solid rgba(244,67,54,0.25);border-radius:4px;padding:3px 8px">ADMIN</span>
+        <button class="btn-outline-sm" onclick="AdminApp.logout()">Sign Out</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Admin Login -->
+  <div id="adminLoginScreen" class="admin-login-screen">
+    <div class="auth-card">
+      <div class="auth-logo"><span class="logo-n">N</span>EXUS</div>
+      <h2 class="auth-title">Admin Access</h2>
+      <p class="auth-subtitle">Restricted to authorised personnel only</p>
+      <form id="adminLoginForm" class="auth-form">
+        <div class="form-group"><label>Admin Email</label><input type="email" id="adminEmail" placeholder="admin@nexusautomotive.co.uk" required></div>
+        <div class="form-group"><label>Password</label><input type="password" id="adminPassword" placeholder="••••••••" required></div>
+        <div class="auth-error" id="adminLoginError"></div>
+        <button type="submit" class="btn-primary-full" id="adminLoginBtn"><span>Sign In to Admin</span></button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Admin Dashboard -->
+  <div id="adminDashboard" class="admin-layout hidden">
+    <aside class="admin-sidebar">
+      <div style="padding:16px 16px 0;margin-bottom:8px">
+        <div style="font-size:0.75rem;color:#555;font-weight:600;letter-spacing:0.05em">NEXUS ADMIN</div>
+      </div>
+      <div class="admin-sidebar-title">Overview</div>
+      <a href="#" class="admin-nav-link active" data-view="dashboard" onclick="AdminApp.showView('dashboard',event)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>Dashboard
+      </a>
+      <div class="admin-sidebar-title">Orders</div>
+      <a href="#" class="admin-nav-link" data-view="all-orders" onclick="AdminApp.showView('all-orders',event)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>All Orders
+      </a>
+      <a href="#" class="admin-nav-link" data-view="pending-orders" onclick="AdminApp.showView('pending-orders',event)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>Pending
+        <span id="pendingBadge" style="margin-left:auto;background:rgba(255,193,7,0.2);color:#ffc107;font-size:0.7rem;padding:2px 7px;border-radius:10px">0</span>
+      </a>
+      <a href="#" class="admin-nav-link" data-view="processing-orders" onclick="AdminApp.showView('processing-orders',event)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4"/></svg>Processing
+      </a>
+      <div class="admin-sidebar-title">Management</div>
+      <a href="#" class="admin-nav-link" data-view="customers" onclick="AdminApp.showView('customers',event)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>Customers
+      </a>
+      <a href="portal.html" target="_blank" class="admin-nav-link">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15,3 21,3 21,9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>Customer Portal
+      </a>
+    </aside>
+
+    <main class="admin-main">
+
+      <!-- Dashboard -->
+      <div id="view-dashboard" class="admin-view">
+        <div class="admin-page-header"><div><h1>Dashboard</h1><p>Overview of all ECU tuning orders</p></div><button class="btn-blue-sm" onclick="AdminApp.refreshOrders()">↻ Refresh</button></div>
+        <div class="admin-stats">
+          <div class="admin-stat"><div class="admin-stat-val" id="aStatTotal">0</div><div class="admin-stat-lab">Total Orders</div></div>
+          <div class="admin-stat admin-stat-yellow"><div class="admin-stat-val" id="aStatPending">0</div><div class="admin-stat-lab">Pending</div></div>
+          <div class="admin-stat admin-stat-blue"><div class="admin-stat-val" id="aStatProcessing">0</div><div class="admin-stat-lab">Processing</div></div>
+          <div class="admin-stat admin-stat-green"><div class="admin-stat-val" id="aStatCompleted">0</div><div class="admin-stat-lab">Completed</div></div>
+          <div class="admin-stat admin-stat-red"><div class="admin-stat-val" id="aStatRejected">0</div><div class="admin-stat-lab">Rejected</div></div>
+        </div>
+        <div class="admin-table-card">
+          <div style="padding:16px 20px;border-bottom:1px solid #161616;display:flex;justify-content:space-between;align-items:center">
+            <h3 style="color:#fff;margin:0;font-size:0.95rem">Recent Orders</h3>
+          </div>
+          <div id="adminRecentOrders"><div class="loading-spinner"><div class="spinner"></div></div></div>
+        </div>
+      </div>
+
+      <!-- All Orders -->
+      <div id="view-all-orders" class="admin-view hidden">
+        <div class="admin-page-header"><div><h1>All Orders</h1><p>Every ECU file submission</p></div></div>
+        <div class="admin-table-card">
+          <div class="admin-table-toolbar">
+            <input type="text" id="adminSearch" placeholder="Search customer, vehicle, reg..." oninput="AdminApp.filterTable()">
+            <select id="adminStatusFilter" onchange="AdminApp.filterTable()">
+              <option value="all">All Status</option>
+              <option value="pending">Pending</option>
+              <option value="processing">Processing</option>
+              <option value="completed">Completed</option>
+              <option value="rejected">Rejected</option>
+            </select>
+          </div>
+          <div id="adminAllOrders"><div class="loading-spinner"><div class="spinner"></div></div></div>
+        </div>
+      </div>
+
+      <!-- Pending Orders -->
+      <div id="view-pending-orders" class="admin-view hidden">
+        <div class="admin-page-header"><div><h1>Pending Orders</h1><p>Orders awaiting review or processing</p></div></div>
+        <div class="admin-table-card"><div id="adminPendingOrders"><div class="loading-spinner"><div class="spinner"></div></div></div></div>
+      </div>
+
+      <!-- Processing Orders -->
+      <div id="view-processing-orders" class="admin-view hidden">
+        <div class="admin-page-header"><div><h1>Processing</h1><p>Orders currently being worked on</p></div></div>
+        <div class="admin-table-card"><div id="adminProcessingOrders"></div></div>
+      </div>
+
+      <!-- Customers -->
+      <div id="view-customers" class="admin-view hidden">
+        <div class="admin-page-header"><div><h1>Customers</h1><p>All registered customer accounts</p></div></div>
+        <div class="admin-table-card"><div id="adminCustomers"><div class="loading-spinner"><div class="spinner"></div></div></div></div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- Order Detail Modal -->
+  <div id="adminModal" class="modal-overlay hidden" onclick="AdminApp.closeModal(event)">
+    <div class="modal-card" style="max-width:680px" onclick="event.stopPropagation()">
+      <button class="modal-close" onclick="AdminApp.closeModal()">&#x2715;</button>
+      <div id="adminModalContent"></div>
+    </div>
+  </div>
+
+  <script src="assets/js/firebase-config.js"></script>
+  <script src="assets/js/admin.js"></script>
+</body>
+</html>
