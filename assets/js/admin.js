@@ -53,8 +53,15 @@ const AdminApp = (() => {
 
   async function loadOrders() {
     try {
-      const snap = await db.collection('orders').orderBy('createdAt', 'desc').get();
+      // Use simple get without orderBy to avoid index requirements
+      const snap = await db.collection('orders').get();
       allOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      // Sort client-side by createdAt descending
+      allOrders.sort((a, b) => {
+        const ta = a.createdAt ? a.createdAt.seconds : 0;
+        const tb = b.createdAt ? b.createdAt.seconds : 0;
+        return tb - ta;
+      });
       renderStats();
       renderRecentOrders();
       renderAllOrdersTable(allOrders);
@@ -62,7 +69,12 @@ const AdminApp = (() => {
       renderFilteredOrders('processing', 'adminProcessingOrders');
       const pending = allOrders.filter(o => o.status === 'pending').length;
       document.getElementById('pendingBadge').textContent = pending;
-    } catch(e) { console.error('loadOrders error:', e); }
+    } catch(e) {
+      console.error('loadOrders error:', e);
+      // Show visible error on dashboard
+      const el = document.getElementById('adminRecentOrders');
+      if (el) el.innerHTML = `<div style="padding:20px;color:#f44336;font-size:0.85rem">⚠️ Error loading orders: ${e.message || e.code || 'Permission denied — check Firestore rules.'}</div>`;
+    }
   }
 
   async function loadCustomers() {
