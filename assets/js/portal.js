@@ -23,6 +23,8 @@ const PortalApp = (() => {
       if (!firebase.apps.length) firebase.initializeApp(window.NEXUS_FB_CONFIG);
       auth = firebase.auth();
       db = firebase.firestore();
+      // Force long-polling so Safari (which blocks WebSockets) can reach Firestore
+      try { db.settings({ experimentalAutoDetectLongPolling: true, merge: true }); } catch(e) {}
       storage = firebase.storage();
       auth.onAuthStateChanged(handleAuthChange);
     } catch(e) {
