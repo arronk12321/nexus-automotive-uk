@@ -521,7 +521,10 @@ const PortalApp = (() => {
         completedAt: orderStatus === 'completed' ? firebase.firestore.FieldValue.serverTimestamp() : null
       };
 
-      const docRef = await db.collection('orders').add(orderData);
+      const docRef = await Promise.race([
+        db.collection('orders').add(orderData),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Firestore timed out — check internet connection or Firestore rules')), 10000))
+      ]);
       allOrders.unshift({ id: docRef.id, ...orderData, createdAt: { seconds: Date.now() / 1000 } });
       renderDashboard();
 
