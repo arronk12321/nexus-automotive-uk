@@ -1,18 +1,25 @@
 /* ================================================================
-   NEXUS AUTOMOTIVE UK — FIREBASE CONFIGURATION
-   Replace the placeholder values below with your Firebase project config.
-   Get these from: Firebase Console > Project Settings > Your Apps
+   NEXUS AUTOMOTIVE UK — Firebase Configuration
    ================================================================ */
 
-const FIREBASE_CONFIG = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+// Firebase SDKs (loaded via CDN in HTML)
+const firebaseConfig = {
+  apiKey: "AIzaSyAoMVPxA9T1MMD7dYm8jg5iH0yfCcdHtsA",
+  authDomain: "nexus-automotive-uk.firebaseapp.com",
+  projectId: "nexus-automotive-uk",
+  storageBucket: "nexus-automotive-uk.firebasestorage.app",
+  messagingSenderId: "1012966631321",
+  appId: "1:1012966631321:web:7a02dcd3d10e8987e45508",
+  measurementId: "G-S9YF1RHW63"
 };
 
-// Firebase will be initialised by portal.js / admin.js
-// Do not initialise here to avoid duplicate app errors
-window.NEXUS_FB_CONFIG = FIREBASE_CONFIG;
+// Initialize Firebase
+firebase.initializeApp(firebaseConfig);
+
+// Expose services globally
+const db        = firebase.firestore();
+const auth      = firebase.auth();
+const storage   = firebase.storage();
+const analytics = firebase.analytics();
+
+console.log("✅ Nexus Automotive UK — Firebase connected");
