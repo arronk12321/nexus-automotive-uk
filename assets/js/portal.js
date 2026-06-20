@@ -418,10 +418,20 @@ const PortalApp = (() => {
       const filePath = `ecu-files/${currentUser.uid}/${Date.now()}_${file.name}`;
       const ref = storage.ref(filePath);
       try {
-        await ref.put(file);
+        await new Promise((resolve, reject) => {
+          const task = ref.put(file);
+          task.on('state_changed',
+            (snap) => {
+              const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
+              setStatus(`🤖 Uploading ECU file... ${pct}%`, 'info');
+            },
+            (err) => reject(err),
+            () => resolve(task.snapshot)
+          );
+        });
       } catch(storageErr) {
         console.error('Storage error:', storageErr);
-        setStatus('❌ File upload failed: Storage permissions not configured. Please contact support.', 'error');
+        setStatus('❌ File upload failed: ' + (storageErr.message || 'Storage permissions error. Please contact support.'), 'error');
         btn.disabled = false;
         return;
       }
@@ -448,8 +458,11 @@ const PortalApp = (() => {
               const modBlob = new Blob([modified], { type: 'application/octet-stream' });
               const modExt = file.name.split('.').pop();
               modifiedFileName = `NEXUS_${service.replace(/[^a-zA-Z0-9]/g,'_')}_${file.name}`;
-              const modRef = storage.ref(`orders/${currentUser.uid}/modified_${Date.now()}_${modifiedFileName}`);
-              await modRef.put(modBlob);
+              const modRef = storage.ref(`processed-files/${currentUser.uid}/modified_${Date.now()}_${modifiedFileName}`);
+              await new Promise((resolve, reject) => {
+                const modTask = modRef.put(modBlob);
+                modTask.on('state_changed', null, reject, () => resolve(modTask.snapshot));
+              });
               modifiedFileUrl = await modRef.getDownloadURL();
               aiProcessed = true;
               orderStatus = 'completed';
