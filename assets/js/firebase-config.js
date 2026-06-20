@@ -2,8 +2,7 @@
    NEXUS AUTOMOTIVE UK — Firebase Configuration
    ================================================================ */
 
-// Firebase SDKs (loaded via CDN in HTML)
-const firebaseConfig = {
+window.NEXUS_FB_CONFIG = {
   apiKey: "AIzaSyAoMVPxA9T1MMD7dYm8jg5iH0yfCcdHtsA",
   authDomain: "nexus-automotive-uk.firebaseapp.com",
   projectId: "nexus-automotive-uk",
@@ -13,13 +12,14 @@ const firebaseConfig = {
   measurementId: "G-S9YF1RHW63"
 };
 
-// Initialize Firebase
-firebase.initializeApp(firebaseConfig);
+// Initialize Firebase immediately
+if (!firebase.apps.length) {
+  firebase.initializeApp(window.NEXUS_FB_CONFIG);
+}
 
 // Expose services globally
-const db        = firebase.firestore();
-const auth      = firebase.auth();
-const storage   = firebase.storage();
-const analytics = firebase.analytics();
+const db      = firebase.firestore();
+const auth    = firebase.auth();
+const storage = firebase.storage();
 
 console.log("✅ Nexus Automotive UK — Firebase connected");
