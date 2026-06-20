@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nexus Automotive UK | ECU Remapping & Tuning File Service</title>
+  <meta name="description" content="Professional ECU remapping, emissions deletes, pops & bangs, gearbox tuning and more. Upload your file, get it modified by AI-assisted experts, download or receive by email. Based in the UK.">
+  <meta name="keywords" content="ECU remap, stage 1 remap, DPF delete, EGR delete, AdBlue delete, pops and bangs, tuning file, ECU tune UK">
+  <meta property="og:title" content="Nexus Automotive UK | ECU Remapping">
+  <meta property="og:description" content="AI-assisted ECU tuning file service. Upload. Tune. Drive.">
+  <meta property="og:type" content="website">
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+  <!-- Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+
+<!-- ================================================================ SITE VIEW -->
+<div id="site-view">
+
+  <!-- ── NAVBAR ────────────────────────────────────────────────── -->
+  <nav class="navbar">
+    <div class="container navbar-inner">
+      <a href="#" class="logo">NEXUS <span>AUTOMOTIVE</span> UK</a>
+      <ul class="nav-links">
+        <li><a href="#services">Services</a></li>
+        <li><a href="#how-it-works">How It Works</a></li>
+        <li><a href="#order">Order</a></li>
+        <li><a href="#" onclick="showAdminLogin()">Admin</a></li>
+      </ul>
+      <a href="#order" class="btn btn-primary nav-cta btn-sm">Order Now</a>
+      <button class="hamburger" aria-label="Menu">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- Mobile menu -->
+  <div class="mobile-menu">
+    <ul>
+      <li><a href="#services" onclick="this.closest('.mobile-menu').classList.remove('open')">Services</a></li>
+      <li><a href="#how-it-works" onclick="this.closest('.mobile-menu').classList.remove('open')">How It Works</a></li>
+      <li><a href="#order" onclick="this.closest('.mobile-menu').classList.remove('open')">Order</a></li>
+      <li><a href="#" onclick="showAdminLogin()">Admin Portal</a></li>
+    </ul>
+  </div>
+
+  <!-- ── HERO ──────────────────────────────────────────────────── -->
+  <section class="hero">
+    <div class="hero-bg"></div>
+    <div class="container">
+      <div class="hero-grid">
+        <div class="hero-content">
+          <div class="hero-eyebrow">
+            <i class="fas fa-microchip"></i>
+            AI-Powered ECU Tuning Platform
+          </div>
+          <h1 class="hero-title">
+            ECU Remapping &<br>
+            <span class="accent">Emissions Solutions</span>
+          </h1>
+          <p class="hero-desc">
+            Nexus Automotive UK offers professional ECU tuning files and vehicle software solutions. Upload your file, select your service — our AI-assisted platform analyses, modifies, and returns your optimised ECU file within hours.
+          </p>
+          <div class="hero-actions">
+            <a href="#order" class="btn btn-primary btn-lg">
+              <i class="fas fa-upload"></i> Upload ECU File
+            </a>
+            <a href="#services" class="btn btn-outline btn-lg">
+              <i class="fas fa-list"></i> View Services
+            </a>
+          </div>
+          <div class="hero-stats">
+            <div>
+              <div class="stat-num">2,500+</div>
+              <div class="stat-label">Files Processed</div>
+            </div>
+            <div>
+              <div class="stat-num">98%</div>
+              <div class="stat-label">Satisfaction Rate</div>
+            </div>
+            <div>
+              <div class="stat-num">24hr</div>
+              <div class="stat-label">Max Turnaround</div>
+            </div>
+            <div>
+              <div class="stat-num">10+</div>
+              <div class="stat-label">ECU Services</div>
+            </div>
+          </div>
+        </div>
+        <div class="hero-visual">
+          <div class="ecu-card">
+            <div class="ecu-header">
+              <div class="ecu-dot dot-r"></div>
+              <div class="ecu-dot dot-y"></div>
+              <div class="ecu-dot dot-g"></div>
+              <span class="ecu-title">Nexus AI · Live Analysis</span>
+            </div>
+            <div class="ecu-params">
+              <div class="param-row">
+                <span class="param-label">ECU Platform</span>
+                <span class="param-value">Bosch EDC17</span>
+              </div>
+              <div class="param-row">
+                <span class="param-label">File Size</span>
+                <span class="param-value">2048 KB</span>
+              </div>
+              <div class="param-row">
+                <span class="param-label">Maps Found</span>
+                <span class="param-value green">487</span>
+              </div>
+              <div class="param-row">
+                <span class="param-label">Checksum</span>
+                <span class="param-value green">Valid ✓</span>
+              </div>
+              <div class="param-row">
+                <span class="param-label">Boost Delta</span>
+                <span class="param-value yellow">+220 mBar</span>
+              </div>
+              <div class="param-row">
+                <span class="param-label">Torque Limit</span>
+                <span class="param-value yellow">+85 Nm</span>
+              </div>
+            </div>
+            <div class="ecu-progress">
+              <div>
+                <div class="prog-label"><span>Injection Optimisation</span><span>94%</span></div>
+                <div class="prog-bar-bg"><div class="prog-bar-fill" data-target="94" style="width:0%"></div></div>
+              </div>
+              <div>
+                <div class="prog-label"><span>Torque Calibration</span><span>88%</span></div>
+                <div class="prog-bar-bg"><div class="prog-bar-fill" data-target="88" style="width:0%"></div></div>
+              </div>
+              <div>
+                <div class="prog-label"><span>Timing Advance</span><span>91%</span></div>
+                <div class="prog-bar-bg"><div class="prog-bar-fill" data-target="91" style="width:0%"></div></div>
+              </div>
+            </div>
+            <div class="ecu-badge">
+              <i class="fas fa-check-circle"></i> Stage 1 Map — Ready to Flash
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── TRUST BAR ──────────────────────────────────────────────── -->
+  <div class="trust-bar">
+    <div class="container trust-inner">
+      <span class="trust-label">Compatible ECUs:</span>
+      <div class="trust-brands">
+        <span>Bosch</span>
+        <span>Delphi</span>
+        <span>Siemens</span>
+        <span>Denso</span>
+        <span>Marelli</span>
+        <span>Valeo</span>
+        <span>Continental</span>
+        <span>Motorola</span>
+        <span>Sagem</span>
+        <span>Geely</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SERVICES ───────────────────────────────────────────────── -->
+  <section class="section" id="services">
+    <div class="container">
+      <div class="text-center">
+        <span class="section-eyebrow">Our Services</span>
+        <h2 class="section-title">Complete ECU Tuning Solutions</h2>
+        <p class="section-subtitle">From Stage 1 power gains to emissions system solutions — professional file modifications for every vehicle and requirement.</p>
+      </div>
+      <div id="services-grid" class="services-grid"></div>
+    </div>
+  </section>
+
+  <!-- ── AI BADGE ───────────────────────────────────────────────── -->
+  <div class="ai-badge-section">
+    <div class="container ai-badge-inner">
+      <div class="ai-badge-icon">
+        <i class="fas fa-brain"></i>
+      </div>
+      <div class="ai-badge-text">
+        <h2>AI-Powered File Processing</h2>
+        <p>Every ECU file uploaded to Nexus Automotive is instantly analysed by our AI engine. It identifies your ECU platform, validates the file checksum, estimates tunable map count, and determines the optimal processing pathway — automated where possible, expert-reviewed for complex modifications.</p>
+        <div class="ai-features">
+          <span class="ai-feature"><i class="fas fa-check-circle"></i> Auto ECU Detection</span>
+          <span class="ai-feature"><i class="fas fa-check-circle"></i> Checksum Validation</span>
+          <span class="ai-feature"><i class="fas fa-check-circle"></i> Map Structure Analysis</span>
+          <span class="ai-feature"><i class="fas fa-check-circle"></i> Instant Simple Mods</span>
+          <span class="ai-feature"><i class="fas fa-check-circle"></i> Expert Queue Routing</span>
+          <span class="ai-feature"><i class="fas fa-check-circle"></i> Auto Checksum Recalc</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── HOW IT WORKS ───────────────────────────────────────────── -->
+  <section class="section hiw-bg" id="how-it-works">
+    <div class="container">
+      <div class="text-center">
+        <span class="section-eyebrow">Process</span>
+        <h2 class="section-title">How It Works</h2>
+        <p class="section-subtitle">Simple, fast, and transparent. Your ECU file is in safe hands from the moment you upload.</p>
+      </div>
+      <div class="hiw-grid">
+        <div class="hiw-step fade-up">
+          <div class="hiw-icon">
+            <span class="hiw-num">1</span>
+            <i class="fas fa-upload"></i>
+          </div>
+          <div class="hiw-title">Upload ECU File</div>
+          <p class="hiw-desc">Read your ECU file using your own tool (KESS, K-TAG, MPPS, etc.) and upload the original binary to our secure platform.</p>
+        </div>
+        <div class="hiw-step fade-up">
+          <div class="hiw-icon">
+            <span class="hiw-num">2</span>
+            <i class="fas fa-sliders-h"></i>
+          </div>
+          <div class="hiw-title">Select Service</div>
+          <p class="hiw-desc">Choose your required modification — Stage 1, EGR/DPF delete, pops & bangs, gearbox tune, or any of our 10+ services.</p>
+        </div>
+        <div class="hiw-step fade-up">
+          <div class="hiw-icon">
+            <span class="hiw-num">3</span>
+            <i class="fas fa-brain"></i>
+          </div>
+          <div class="hiw-title">AI Modifies File</div>
+          <p class="hiw-desc">Our AI analyses your file, detects the ECU platform, applies modifications automatically or routes to an expert tuning technician.</p>
+        </div>
+        <div class="hiw-step fade-up">
+          <div class="hiw-icon">
+            <span class="hiw-num">4</span>
+            <i class="fas fa-check-double"></i>
+          </div>
+          <div class="hiw-title">Verified & Returned</div>
+          <p class="hiw-desc">Your modified file is verified, checksums recalculated, and returned to you — ready to flash back to your vehicle within 24 hours.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── ORDER FORM ─────────────────────────────────────────────── -->
+  <section class="section form-section" id="order">
+    <div class="container">
+      <div class="text-center">
+        <span class="section-eyebrow">Order</span>
+        <h2 class="section-title">Submit Your ECU File</h2>
+        <p class="section-subtitle">Fill in your vehicle details, upload your ECU file, and select the modification you need. We handle the rest.</p>
+      </div>
+      <div class="order-grid">
+        <!-- Sidebar -->
+        <div class="order-sidebar">
+          <h3>Select Your Service</h3>
+          <div id="sidebar-services" class="sidebar-services"></div>
+          <div class="disclaimer-box">
+            <i class="fas fa-exclamation-triangle"></i>
+            <div><strong>Important:</strong> DPF, AdBlue, and Speed Limiter modifications are for motorsport and off-road use only. The customer is solely responsible for ensuring road legality in their jurisdiction.</div>
+          </div>
+        </div>
+        <!-- Form -->
+        <div class="form-card">
+          <form id="order-form">
+            <div class="form-grid-2">
+              <div class="form-group">
+                <label>Full Name *</label>
+                <input type="text" name="name" placeholder="John Smith" required>
+              </div>
+              <div class="form-group">
+                <label>Email Address *</label>
+                <input type="email" name="email" placeholder="john@example.com" required>
+              </div>
+              <div class="form-group">
+                <label>Phone Number *</label>
+                <input type="tel" name="phone" placeholder="+44 7700 000000" required>
+              </div>
+              <div class="form-group">
+                <label>Vehicle Make *</label>
+                <input type="text" name="make" placeholder="e.g. Volkswagen" required>
+              </div>
+              <div class="form-group">
+                <label>Model *</label>
+                <input type="text" name="model" placeholder="e.g. Golf GTD" required>
+              </div>
+              <div class="form-group">
+                <label>Year *</label>
+                <input type="text" name="year" placeholder="e.g. 2019" required>
+              </div>
+              <div class="form-group">
+                <label>Engine *</label>
+                <input type="text" name="engine" placeholder="e.g. 2.0 TDI 150ps" required>
+              </div>
+              <div class="form-group">
+                <label>ECU Type (if known)</label>
+                <input type="text" name="ecu_type" id="ecu-type" placeholder="e.g. Bosch EDC17 — auto-detected on upload">
+              </div>
+              <div class="form-group">
+                <label>Registration</label>
+                <input type="text" name="registration" placeholder="e.g. AB19 XYZ" style="text-transform:uppercase">
+              </div>
+              <div class="form-group">
+                <label>Required Service *</label>
+                <select name="service" id="service-select" required>
+                  <option value="">— Select a service —</option>
+                  <option>Stage 1 Remapping</option>
+                  <option>EGR Delete</option>
+                  <option>DPF Delete</option>
+                  <option>AdBlue Delete</option>
+                  <option>Pops &amp; Bangs</option>
+                  <option>Swirl Flap Delete</option>
+                  <option>Speed Limiter Removal</option>
+                  <option>Start/Stop Disable</option>
+                  <option>TCU/DSG Gearbox Tuning</option>
+                  <option>Immo Off / ECU Solutions</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>ECU File Upload *</label>
+              <div class="file-upload-area" id="file-upload-area">
+                <input type="file" id="ecu-file" accept=".bin,.hex,.ori,.mod,.kess,.ktag,.bak,.*">
+                <div class="upload-icon"><i class="fas fa-cloud-upload-alt"></i></div>
+                <div class="upload-text">Drag & drop your ECU file here</div>
+                <div class="upload-hint">Supports .bin, .hex, .ori, .mod and all ECU file formats</div>
+              </div>
+              <div class="file-info" id="file-info">
+                <i class="fas fa-file-code" style="font-size:1.2rem"></i>
+                <div>
+                  <div id="file-name" style="font-weight:700"></div>
+                  <div style="font-size:0.75rem;color:var(--grey)"><span id="file-size"></span> · ECU: <span id="file-ecu-type"></span></div>
+                </div>
+                <i class="fas fa-check-circle" style="margin-left:auto;font-size:1.1rem;color:#4ade80"></i>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>Additional Notes</label>
+              <textarea name="notes" placeholder="Any specific requirements, known issues, or additional information about your vehicle..."></textarea>
+            </div>
+
+            <div class="form-submit-area">
+              <button type="submit" class="btn btn-primary btn-lg">
+                <i class="fas fa-microchip"></i> Get My File Modified
+              </button>
+              <div class="disclaimer-box">
+                <i class="fas fa-exclamation-triangle"></i>
+                <div>By submitting, you confirm: DPF, AdBlue, EGR, and Speed Limiter modifications are for <strong>motorsport and off-road use only where applicable</strong>. The customer is solely responsible for ensuring compliance with all applicable road traffic laws in their local jurisdiction. Nexus Automotive UK accepts no liability for use of modified files on public roads.</div>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── FOOTER ─────────────────────────────────────────────────── -->
+  <footer>
+    <div class="container">
+      <div class="footer-grid">
+        <div>
+          <div class="footer-logo">NEXUS <span>AUTOMOTIVE</span> UK</div>
+          <p class="footer-tagline">Professional ECU tuning files and vehicle software solutions. AI-assisted processing, expert reviewed, fast turnaround.</p>
+          <a href="https://wa.me/447700000000" target="_blank" class="btn btn-green btn-sm">
+            <i class="fab fa-whatsapp"></i> WhatsApp Us
+          </a>
+        </div>
+        <div>
+          <div class="footer-heading">Services</div>
+          <ul class="footer-links">
+            <li><a href="#" onclick="selectService('Stage 1 Remapping')">Stage 1 Remapping</a></li>
+            <li><a href="#" onclick="selectService('EGR Delete')">EGR Delete</a></li>
+            <li><a href="#" onclick="selectService('DPF Delete')">DPF Delete</a></li>
+            <li><a href="#" onclick="selectService('AdBlue Delete')">AdBlue Delete</a></li>
+            <li><a href="#" onclick="selectService('Pops &amp; Bangs')">Pops &amp; Bangs</a></li>
+          </ul>
+        </div>
+        <div>
+          <div class="footer-heading">More Services</div>
+          <ul class="footer-links">
+            <li><a href="#" onclick="selectService('Swirl Flap Delete')">Swirl Flap Delete</a></li>
+            <li><a href="#" onclick="selectService('Speed Limiter Removal')">Speed Limiter Removal</a></li>
+            <li><a href="#" onclick="selectService('Start/Stop Disable')">Start/Stop Disable</a></li>
+            <li><a href="#" onclick="selectService('TCU/DSG Gearbox Tuning')">TCU/DSG Tuning</a></li>
+            <li><a href="#" onclick="selectService('Immo Off / ECU Solutions')">Immo Off / ECU</a></li>
+          </ul>
+        </div>
+        <div>
+          <div class="footer-heading">Company</div>
+          <ul class="footer-links">
+            <li><a href="#how-it-works">How It Works</a></li>
+            <li><a href="#order">Submit File</a></li>
+            <li><a href="#" onclick="showAdminLogin()">Admin Portal</a></li>
+            <li><a href="https://wa.me/447700000000" target="_blank">Contact Us</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <div class="footer-copy">© 2025 Nexus Automotive UK. All rights reserved.</div>
+        <div class="footer-disclaimer">
+          ⚠️ <strong>Disclaimer:</strong> DPF Delete, AdBlue Delete, EGR Delete, Speed Limiter Removal and similar modifications are supplied for <strong>motorsport and off-road use only</strong> where applicable under local legislation. The customer is solely and entirely responsible for ensuring compliance with all applicable road traffic legislation in their local area. Nexus Automotive UK accepts no liability whatsoever for use of modified ECU files on public roads.
+        </div>
+      </div>
+    </div>
+  </footer>
+
+</div><!-- end #site-view -->
+
+<!-- ================================================================ ADMIN LOGIN OVERLAY -->
+<div id="login-overlay" style="display:none" class="login-overlay">
+  <div class="login-box">
+    <div class="login-logo">NEXUS <span>ADMIN</span></div>
+    <div class="login-sub">Enter your admin password to access the portal</div>
+    <div class="form-group" style="text-align:left">
+      <label>Password</label>
+      <input type="password" id="admin-password" placeholder="Enter password" onkeydown="if(event.key==='Enter')checkAdminLogin()">
+    </div>
+    <div style="display:flex;gap:0.75rem;margin-top:1rem">
+      <button class="btn btn-primary" onclick="checkAdminLogin()" style="flex:1">
+        <i class="fas fa-lock-open"></i> Login
+      </button>
+      <button class="btn btn-outline" onclick="document.getElementById('login-overlay').style.display='none'">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================ ADMIN VIEW -->
+<div id="admin-view" style="display:none">
+  <aside class="admin-sidebar">
+    <div class="admin-logo">NEXUS <span>ADMIN</span></div>
+    <div class="admin-subtitle">Tuning File Management Portal</div>
+    <ul class="admin-nav">
+      <li><a href="#" class="active" onclick="renderAdmin()"><i class="fas fa-tachometer-alt"></i> Dashboard</a></li>
+      <li><a href="#" onclick="renderAdmin()"><i class="fas fa-file-code"></i> All Orders</a></li>
+    </ul>
+    <button class="admin-back" onclick="backToSite()">
+      <i class="fas fa-arrow-left"></i> Back to Website
+    </button>
+  </aside>
+  <main class="admin-main">
+    <div class="admin-topbar">
+      <div>
+        <div class="admin-page-title">Order Management</div>
+        <div class="admin-page-sub">View, price, process and return customer ECU files</div>
+      </div>
+      <div style="display:flex;gap:0.75rem;flex-wrap:wrap;align-items:center">
+        <input type="text" id="admin-search" placeholder="Search orders..." style="max-width:220px" oninput="renderOrdersTable()">
+        <button class="btn btn-primary btn-sm" onclick="renderAdmin()"><i class="fas fa-sync-alt"></i> Refresh</button>
+      </div>
+    </div>
+    <div id="admin-stats" class="stats-grid"></div>
+    <div class="admin-table-wrap">
+      <div class="table-header">
+        <div class="table-title">Orders</div>
+        <div class="table-filters">
+          <button class="filter-btn active" data-filter="all"    onclick="setAdminFilter('all')">All</button>
+          <button class="filter-btn"        data-filter="pending"    onclick="setAdminFilter('pending')">⏳ Pending</button>
+          <button class="filter-btn"        data-filter="processing" onclick="setAdminFilter('processing')">🔄 Processing</button>
+          <button class="filter-btn"        data-filter="completed"  onclick="setAdminFilter('completed')">✅ Completed</button>
+          <button class="filter-btn"        data-filter="rejected"   onclick="setAdminFilter('rejected')">❌ Rejected</button>
+        </div>
+      </div>
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>Ref</th>
+            <th>Customer</th>
+            <th>Vehicle</th>
+            <th>Service</th>
+            <th>Status</th>
+            <th>Price</th>
+            <th>Date</th>
+          </tr>
+        </thead>
+        <tbody id="orders-tbody">
+          <tr><td colspan="7" style="text-align:center;color:var(--grey);padding:3rem">No orders yet</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<!-- ================================================================ PROCESSING MODAL -->
+<div class="modal-overlay" id="processing-modal">
+  <div class="modal-box">
+    <div class="modal-icon">🤖</div>
+    <div class="modal-title" id="proc-title">Processing Your File</div>
+    <div class="modal-text" id="proc-text">Our AI is analysing your ECU file...</div>
+    <div class="progress-steps" id="proc-steps"></div>
+  </div>
+</div>
+
+<!-- ================================================================ RESULT MODAL -->
+<div class="modal-overlay" id="result-modal">
+  <div class="result-box" id="result-box" style="background:var(--card);border:1px solid var(--border);border-radius:20px;max-width:620px;width:100%;max-height:90vh;overflow-y:auto"></div>
+</div>
+
+<!-- ================================================================ ORDER DETAIL MODAL -->
+<div class="detail-overlay" id="detail-overlay">
+  <div class="detail-box">
+    <div class="detail-header">
+      <div class="detail-title">Order Detail</div>
+      <button class="detail-close" onclick="closeDetail()">✕</button>
+    </div>
+    <div id="detail-body" class="detail-body"></div>
+  </div>
+</div>
+
+<!-- ================================================================ WHATSAPP -->
+<div class="whatsapp-float">
+  <div class="whatsapp-label">Chat with us on WhatsApp</div>
+  <a href="https://wa.me/447700000000?text=Hi+Nexus+Automotive,+I+need+help+with+my+ECU+remap"
+     target="_blank" class="whatsapp-btn" aria-label="WhatsApp">
+    <i class="fab fa-whatsapp"></i>
+  </a>
+</div>
+
+<!-- ================================================================ TOASTS -->
+<div class="toast-container" id="toast-container"></div>
+
+<!-- Scripts -->
+<script src="assets/js/ecu-processor.js"></script>
+<script src="assets/js/main.js"></script>
+
+</body>
+</html>
