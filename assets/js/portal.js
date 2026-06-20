@@ -535,7 +535,9 @@ const PortalApp = (() => {
 
     } catch(err) {
       console.error('Order submit error:', err);
-      setStatus('❌ ' + (err.message || err.code || 'Error submitting order — check Firestore rules.'), 'error');
+      const errMsg = err.message || err.code || 'Unknown error';
+      alert('ORDER ERROR: ' + errMsg);
+      setStatus('❌ ' + errMsg, 'error');
       btn.disabled = false;
     }
   }
