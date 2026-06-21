@@ -349,6 +349,10 @@ const PortalApp = (() => {
     if (!currentUser) return;
     try {
       allOrders = await fsQuery('orders', 'userId', currentUser.uid);
+      allOrders.sort((a, b) => {
+        const ta = parseDate(a.createdAt), tb = parseDate(b.createdAt);
+        return (tb ? tb.getTime() : 0) - (ta ? ta.getTime() : 0);
+      });
       renderDashboard();
       renderRecentOrders();
     } catch(e) { console.error('loadOrders error:', e); }

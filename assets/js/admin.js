@@ -10,9 +10,18 @@ const AdminApp = (() => {
     return `https://firestore.googleapis.com/v1/projects/${cfg.projectId}/databases/nexus/documents`;
   }
 
+  async function fsAuthHeaders(contentType) {
+    const h = {};
+    if (contentType) h['Content-Type'] = contentType;
+    if (auth && auth.currentUser) {
+      try { h['Authorization'] = `Bearer ${await auth.currentUser.getIdToken(true)}`; } catch(e) {}
+    }
+    return h;
+  }
+
   async function fsList(collection) {
     const url = `${fsBase()}/${collection}?pageSize=300`;
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: await fsAuthHeaders() });
     if (!res.ok) throw new Error(`Firestore ${res.status}`);
     const data = await res.json();
     return (data.documents || []).map(fsDocToObj);
@@ -23,7 +32,7 @@ const AdminApp = (() => {
     const url = `${fsBase()}/${collection}/${docId}?${mask}`;
     const res = await fetch(url, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await fsAuthHeaders('application/json'),
       body: JSON.stringify({ fields: toFsFields(fields) })
     });
     if (!res.ok) throw new Error(`Firestore ${res.status}`);
@@ -449,7 +458,7 @@ const AdminApp = (() => {
   // ── OpenAI / ECU Analysis ──────────────────────────────────────────
   async function loadOpenAIKey() {
     try {
-      const res = await fetch(`${fsBase()}/settings/openai`);
+      const res = await fetch(`${fsBase()}/settings/openai`, { headers: await fsAuthHeaders() });
       if (!res.ok) return;
       const doc = await res.json();
       if (doc.fields && doc.fields.apiKey) openAIKey = fsValToJs(doc.fields.apiKey);

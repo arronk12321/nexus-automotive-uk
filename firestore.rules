@@ -1,0 +1,43 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper: check if user is the admin ──
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email == 'kostileka@gmail.com';
+    }
+
+    // ── Orders ──────────────────────────────────────────────────
+    // Customers: read/create their own orders only
+    // Admin: full read/write on all orders
+    match /orders/{orderId} {
+      allow read:   if request.auth != null
+                    && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if request.auth != null
+                    && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // ── Users ───────────────────────────────────────────────────
+    // Users can read/write their own profile; admin reads all
+    match /users/{userId} {
+      allow read:   if request.auth != null
+                    && (request.auth.uid == userId || isAdmin());
+      allow create: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null
+                    && (request.auth.uid == userId || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // ── Settings (OpenAI key, etc.) ─────────────────────────────
+    // Admin only
+    match /settings/{doc} {
+      allow read, write: if isAdmin();
+    }
+
+    // ── Default: deny everything else ───────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
