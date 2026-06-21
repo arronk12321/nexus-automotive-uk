@@ -13,6 +13,43 @@ const PortalApp = (() => {
   const AI_AUTO_SERVICES = ['Start/Stop Disable', 'Speed Limiter Removal', 'Swirl Flap Delete', 'EGR Delete'];
   const AI_REVIEW_SERVICES = ['Stage 1 Remap', 'DPF Delete', 'AdBlue Delete', 'Pops & Bangs', 'TCU/DSG Tuning', 'Immo Off / ECU Solutions'];
 
+  // ── Firestore REST helpers (bypass SDK transport issues on Safari) ──
+  function toFsValue(val) {
+    if (val === null || val === undefined) return { nullValue: null };
+    if (typeof val === 'boolean') return { booleanValue: val };
+    if (val instanceof Date) return { timestampValue: val.toISOString() };
+    if (typeof val === 'number') return Number.isInteger(val) ? { integerValue: String(val) } : { doubleValue: val };
+    if (typeof val === 'string') return { stringValue: val };
+    if (Array.isArray(val)) return { arrayValue: { values: val.map(toFsValue) } };
+    if (typeof val === 'object') {
+      const fields = {};
+      for (const [k, v] of Object.entries(val)) fields[k] = toFsValue(v);
+      return { mapValue: { fields } };
+    }
+    return { stringValue: String(val) };
+  }
+
+  async function fsAdd(collection, data) {
+    const token = await auth.currentUser.getIdToken(true);
+    const pid = window.NEXUS_FB_CONFIG.projectId;
+    const fields = {};
+    for (const [k, v] of Object.entries(data)) fields[k] = toFsValue(v);
+    const res = await fetch(
+      `https://firestore.googleapis.com/v1/projects/${pid}/databases/(default)/documents/${collection}`,
+      {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields })
+      }
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message || `Firestore REST error ${res.status}`);
+    }
+    const result = await res.json();
+    return { id: result.name.split('/').pop() };
+  }
+
   // ── Init ───────────────────────────────────────────────────────
   function init() {
     if (!window.NEXUS_FB_CONFIG || window.NEXUS_FB_CONFIG.apiKey === 'YOUR_API_KEY') {
@@ -523,20 +560,8 @@ const PortalApp = (() => {
         completedAt: orderStatus === 'completed' ? new Date() : null
       };
 
-      // Minimal connectivity test first
-      try {
-        await Promise.race([
-          db.collection('_test').add({ t: Date.now(), u: currentUser.uid }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('TEST WRITE timed out — Firestore unreachable from this browser')), 8000))
-        ]);
-      } catch(testErr) {
-        throw new Error('Cannot reach Firestore: ' + testErr.message);
-      }
-
-      const docRef = await Promise.race([
-        db.collection('orders').add(orderData),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Firestore order write timed out')), 15000))
-      ]);
+      // Write order via REST API (bypasses SDK transport issues on Safari)
+      const docRef = await fsAdd('orders', orderData);
       allOrders.unshift({ id: docRef.id, ...orderData, createdAt: { seconds: Date.now() / 1000 } });
       renderDashboard();
 
