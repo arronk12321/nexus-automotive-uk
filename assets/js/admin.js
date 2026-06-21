@@ -868,7 +868,7 @@ Respond with valid JSON only (no markdown):
         else if (svc.includes('speed'))                      res = simosSpeedLimiterRemoval(bytes, fileSize);
         else if (svc.includes('dpf'))                        res = { cannotApply: true, reason: 'SIMOS PCR2.1 DPF Delete — complex multi-map calibration required (WinOLS recommended). Queued for manual.' };
         else if (svc.includes('adblue') || svc.includes('scr')) res = { cannotApply: true, reason: 'AdBlue/SCR Delete — variant-specific SCR catalyst maps required. Queued for manual.' };
-        else if (svc.includes('stage') || svc.includes('remap')) res = { cannotApply: true, reason: 'Stage 1 — custom torque/injection/boost calibration required. Queued for manual.' };
+        else if (svc.includes('stage') || svc.includes('remap')) res = simosStage1Tune(bytes, fileSize);
         else if (svc.includes('start') || svc.includes('stop')) res = { cannotApply: true, reason: 'Start/Stop Disable — requires manual calibration.' };
         else if (svc.includes('pops') || svc.includes('bang'))  res = { cannotApply: true, reason: 'Pops & Bangs — requires manual exhaust timing calibration.' };
         else res = { cannotApply: true, reason: `No auto-apply strategy for "${svc}" on SIMOS PCR2.1.` };
@@ -1069,6 +1069,93 @@ Respond with valid JSON only (no markdown):
       ],
       checksumRequired: true,
       technicalNotes: `SIMOS PCR2.1 Speed Limiter Removal — VMax patched from ${origVal} km/h to 32767 km/h. Vehicle will no longer be electronically limited. Checksum recalculation required before flashing.`
+    };
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  //  SIMOS PCR2.1 — STAGE 1 TUNE
+  //  Method: 1) Boost map +12% (cap 2200 mbar)
+  //          2) Torque limiter 250 → 310 Nm
+  //          3) Fuelling handled by ECU torque model (safe)
+  // ══════════════════════════════════════════════════════════════════
+  function simosStage1Tune(bytes, fileSize) {
+    const patches = [];
+
+    // ─── 1. BOOST MAP ───────────────────────────────────────────────
+    const CASM = [0x43,0x41,0x53,0x4D,0x32,0x50]; // "CASM2P"
+    const casmOff = findBytes(bytes, CASM, 0, fileSize);
+    if (casmOff < 0) return { cannotApply: true, reason: 'CASM2P calibration header not found — cannot locate maps.' };
+    const calBase = Math.max(0, casmOff - 0x10);
+
+    // Find boost map: 80 contiguous uint16 values in 1000-2100 range
+    let boostMapOff = -1;
+    for (let off = calBase; off < Math.min(calBase + 0x60000, fileSize - 160); off += 2) {
+      let ok = true, hasAbove1000 = false;
+      for (let i = 0; i < 80; i++) {
+        const v = bytes[off + i*2] | (bytes[off + i*2 + 1] << 8);
+        if (v < 950 || v > 2200) { ok = false; break; }
+        if (v > 1000) hasAbove1000 = true;
+      }
+      if (ok && hasAbove1000) { boostMapOff = off; break; }
+    }
+    if (boostMapOff < 0) return { cannotApply: true, reason: 'Boost map not located in calibration area.' };
+
+    // Patch even rows (0,2,4,6,8) of 10×8 map: +12%, cap 2200 mbar
+    let boostCells = 0;
+    for (let r = 0; r < 10; r += 2) {
+      for (let c = 0; c < 8; c++) {
+        const idx = boostMapOff + (r * 8 + c) * 2;
+        const v = bytes[idx] | (bytes[idx + 1] << 8);
+        if (v > 1000 && v <= 2100) {
+          const nv = Math.min(Math.round(v * 1.12), 2200);
+          bytes[idx]     = nv & 0xFF;
+          bytes[idx + 1] = (nv >> 8) & 0xFF;
+          boostCells++;
+        }
+      }
+    }
+    if (boostCells > 0) {
+      patches.push(`✅ Boost map @ 0x${boostMapOff.toString(16).toUpperCase()}: ${boostCells} cells raised by 12% (capped at 2200 mbar)`);
+    }
+
+    // ─── 2. TORQUE LIMITER ──────────────────────────────────────────
+    // Unique sig: 6×0x8001 + 8×0x0000, then 32×250 (0x00FA)
+    const TORQ_SIG = [];
+    for (let i = 0; i < 6; i++) { TORQ_SIG.push(0x01, 0x80); } // 6 × 0x8001
+    for (let i = 0; i < 8; i++) { TORQ_SIG.push(0x00, 0x00); } // 8 × 0x0000
+    for (let i = 0; i < 4; i++) { TORQ_SIG.push(0xFA, 0x00); } // 4 × 250
+
+    const torqSigOff = findBytes(bytes, TORQ_SIG, 0, fileSize);
+    if (torqSigOff < 0) return { cannotApply: false, patchCount: boostCells, patches: patches.concat(['⚠️ Torque limiter signature not found — boost raised but torque limit unchanged. Manual torque adjustment recommended.']), checksumRequired: true, technicalNotes: 'Partial Stage 1: boost raised but torque limiter not found.' };
+
+    // Torque data starts after 6×8001 + 8×0000 = 12+16 = 28 bytes
+    const torqDataOff = torqSigOff + 28;
+
+    // Verify all 32 values are 250
+    let all250 = true;
+    for (let i = 0; i < 32; i++) {
+      const v = bytes[torqDataOff + i*2] | (bytes[torqDataOff + i*2 + 1] << 8);
+      if (v !== 250) { all250 = false; break; }
+    }
+    if (!all250) {
+      patches.push('⚠️ Torque limiter found but values not stock (250 Nm) — skipped for safety. Manual review needed.');
+      return { cannotApply: false, patchCount: boostCells, patches, checksumRequired: true, technicalNotes: 'Partial Stage 1: boost raised, torque limiter not stock.' };
+    }
+
+    // Patch 32 × 250 → 32 × 310 Nm (0x0136)
+    const NEW_TORQUE = 310;
+    for (let i = 0; i < 32; i++) {
+      bytes[torqDataOff + i*2]     = NEW_TORQUE & 0xFF;
+      bytes[torqDataOff + i*2 + 1] = (NEW_TORQUE >> 8) & 0xFF;
+    }
+    patches.push(`✅ Torque limiter @ 0x${torqDataOff.toString(16).toUpperCase()}: 32 cells raised from 250 Nm → ${NEW_TORQUE} Nm`);
+
+    return {
+      cannotApply: false,
+      patchCount: boostCells + 32,
+      patches,
+      checksumRequired: true,
+      technicalNotes: `SIMOS PCR2.1 Stage 1 Tune — Boost increased +12% (cap 2200 mbar, ${boostCells} cells), torque limiter raised 250→${NEW_TORQUE} Nm (32 cells). ECU torque model auto-adjusts fuelling. Expected: ~130 HP / ${NEW_TORQUE} Nm. Checksum recalculation required before flashing.`
     };
   }
 
