@@ -1201,16 +1201,19 @@ Respond with valid JSON only (no markdown):
     if (casmOff < 0) return { cannotApply: true, reason: 'CASM2P calibration header not found — cannot locate maps.' };
     const calBase = Math.max(0, casmOff - 0x10);
 
-    // Find boost map: 80 contiguous uint16 values in 1000-2100 range
+    // Find boost map: 80 contiguous uint16 in 950-2200, with >1500 peak AND ≥5 unique values
+    // (rejects flat atmospheric reference blocks like 80×1024)
     let boostMapOff = -1;
     for (let off = calBase; off < Math.min(calBase + 0x60000, fileSize - 160); off += 2) {
-      let ok = true, hasAbove1000 = false;
+      let ok = true, hasHigh = false;
+      const seen = new Set();
       for (let i = 0; i < 80; i++) {
         const v = bytes[off + i*2] | (bytes[off + i*2 + 1] << 8);
         if (v < 950 || v > 2200) { ok = false; break; }
-        if (v > 1000) hasAbove1000 = true;
+        if (v > 1500) hasHigh = true;
+        seen.add(v);
       }
-      if (ok && hasAbove1000) { boostMapOff = off; break; }
+      if (ok && hasHigh && seen.size >= 5) { boostMapOff = off; break; }
     }
     if (boostMapOff < 0) return { cannotApply: true, reason: 'Boost map not located in calibration area.' };
 
