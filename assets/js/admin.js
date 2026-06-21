@@ -1074,8 +1074,9 @@ Respond with valid JSON only (no markdown):
 
   // ══════════════════════════════════════════════════════════════════
   //  SIMOS PCR2.1 — DPF DELETE
-  //  Method: 3-stage — soot mass → 0, diff pressure → 0, regen temp → max
-  //  All 3 signatures are unique (1 hit each) in PCR2.1 binaries
+  //  Method: 2-stage — soot mass → 0, diff pressure → 0
+  //  Both sigs are unique (1 hit each). With both regen triggers at zero
+  //  the ECU will never initiate DPF regeneration. Industry-standard approach.
   // ══════════════════════════════════════════════════════════════════
   function simosDPFDelete(bytes, fileSize) {
     const patches = [];
@@ -1141,37 +1142,10 @@ Respond with valid JSON only (no markdown):
       patches.push('⚠️ DPF differential pressure signature not found');
     }
 
-    // ─── 3. DPF REGENERATION TEMPERATURE THRESHOLDS ────────────────
-    // Unique sig: 4 × 2250 (0x08CA) + 8 × 614 (0x0266)
-    // After sig: 8 rows × 8 cells of temperature thresholds (614–3941°C)
-    const REGEN_SIG = [];
-    for (let i = 0; i < 4; i++) { REGEN_SIG.push(0xCA, 0x08); } // 4 × 2250
-    for (let i = 0; i < 8; i++) { REGEN_SIG.push(0x66, 0x02); } // 8 × 614
-
-    const regenSigOff = findBytes(bytes, REGEN_SIG, 0, fileSize);
-    if (regenSigOff >= 0) {
-      const regenDataOff = regenSigOff + 8; // skip 4 × 2250 (8 bytes)
-      // Set all 8 rows × 8 cols = 64 cells to 9999 (regen never triggers)
-      const MAX_TEMP = 9999; // 0x270F — unreachable exhaust temp
-      let regenCells = 0;
-      for (let i = 0; i < 64; i++) {
-        const v = bytes[regenDataOff + i*2] | (bytes[regenDataOff + i*2 + 1] << 8);
-        // Verify value is a plausible temp (500–5000) before patching
-        if (v >= 500 && v <= 5000) {
-          bytes[regenDataOff + i*2]     = MAX_TEMP & 0xFF;
-          bytes[regenDataOff + i*2 + 1] = (MAX_TEMP >> 8) & 0xFF;
-          regenCells++;
-        }
-      }
-      if (regenCells > 0) {
-        totalCells += regenCells;
-        patches.push(`✅ DPF regen temperature @ 0x${regenDataOff.toString(16).toUpperCase()}: ${regenCells} cells set to ${MAX_TEMP}°C (regen can never initiate)`);
-      } else {
-        patches.push('⚠️ Regen temp signature found but values out of expected range — skipped');
-      }
-    } else {
-      patches.push('⚠️ DPF regen temperature signature not found');
-    }
+    // NOTE: Stage 3 (regen temperature) was removed — the original sig (4×0x08CA + 8×0x0266)
+    // was a false positive matching the swirl flap position map at 0x184590.
+    // 2-stage DPF Delete (soot=0 + pressure=0) is the industry-standard approach:
+    // with both regen trigger conditions eliminated, the ECU will never initiate regen.
 
     if (totalCells === 0) {
       return { cannotApply: true, reason: 'DPF Delete — no DPF maps could be located. File may not contain a DPF calibration. Queued for manual review.' };
@@ -1182,7 +1156,7 @@ Respond with valid JSON only (no markdown):
       patchCount: totalCells,
       patches,
       checksumRequired: true,
-      technicalNotes: `SIMOS PCR2.1 DPF Delete — 3-stage: soot mass zeroed (no loading detected), differential pressure zeroed (no blockage detected), regen temps set to ${totalCells > 64 ? '9999°C' : 'max'} (regen never initiates). Total ${totalCells} cells modified. Physical DPF must be removed before flashing. Checksum recalculation required.`
+      technicalNotes: `SIMOS PCR2.1 DPF Delete — 2-stage: soot mass zeroed (no loading detected), differential pressure zeroed (no blockage detected). With both regen triggers at zero the ECU will never initiate regeneration. Total ${totalCells} cells modified. Physical DPF must be removed before flashing. Checksum recalculation required.`
     };
   }
 
