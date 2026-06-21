@@ -686,11 +686,9 @@ Respond with valid JSON only (no markdown):
 
   // ── Apply Tune ─────────────────────────────────────────────────────
   async function applyTune(orderId) {
-    if (!openAIKey) { alert('OpenAI key not found in settings.'); return; }
     const order = allOrders.find(o => o.id === orderId);
     if (!order) return;
     if (!order.originalFileUrl) { alert('No ECU file attached to this order.'); return; }
-    if (!order.ecuReport) { alert('Please run ECU Analysis first before applying a tune.'); return; }
 
     const btn = document.getElementById('applyTuneBtn');
     const statusEl = document.getElementById('tuneStatus');
@@ -700,9 +698,6 @@ Respond with valid JSON only (no markdown):
     if (btn) { btn.disabled = true; btn.textContent = '⚙️ Processing...'; }
 
     try {
-      let ecuReport = {};
-      try { ecuReport = JSON.parse(order.ecuReport); } catch(e) {}
-
       setStatus('⬇️ Downloading original ECU binary...');
       const dlUrl = order.originalFileUrl + (order.originalFileUrl.includes('?') ? '&' : '?') + '_nc=' + Date.now();
       const dlRes = await fetch(dlUrl);
@@ -711,174 +706,33 @@ Respond with valid JSON only (no markdown):
       const bytes = new Uint8Array(buffer);
       const fileSize = bytes.length;
 
-      setStatus(`📦 ${(fileSize/1024).toFixed(1)} KB downloaded. Extracting binary context for AI...`);
+      setStatus(`📦 ${(fileSize / 1024).toFixed(1)} KB downloaded. Detecting ECU platform...`);
 
-      // Build hex windows — 12 evenly spaced + header + tail
-      const toHex = arr => Array.from(arr).map(b => b.toString(16).padStart(2,'0')).join('');
-      const hexWindows = [];
-      const numW = 12, winSize = 128;
-      hexWindows.push(`[HEADER offset=0x000000] ${toHex(bytes.slice(0, 512))}`);
-      for (let w = 0; w < numW; w++) {
-        const pct = w / (numW - 1);
-        const off = Math.min(Math.floor(pct * (fileSize - winSize)), fileSize - winSize);
-        hexWindows.push(`[offset=0x${off.toString(16).toUpperCase().padStart(6,'0')} dec=${off}] ${toHex(bytes.slice(off, off + winSize))}`);
-      }
-      hexWindows.push(`[TAIL offset=0x${(fileSize-256).toString(16).toUpperCase()}] ${toHex(bytes.slice(fileSize - 256))}`);
+      // ── Step 1: Detect ECU type from binary ─────────────────────
+      const ecuInfo = detectECUFromBinary(bytes, fileSize);
+      setStatus(`🔍 Platform: <b>${ecuInfo.platform}</b> (${ecuInfo.confidence}% confidence) — Part: ${ecuInfo.part || 'n/a'}<br>Applying <b>${order.service}</b>...`);
 
-      // Re-extract strings for context
-      const strs = []; let cur = '';
-      for (let i = 0; i < bytes.length; i++) {
-        const c = bytes[i];
-        if (c >= 32 && c <= 126) cur += String.fromCharCode(c);
-        else { if (cur.length >= 5) strs.push(cur); cur = ''; }
-      }
-      const uniqueStrs = [...new Set(strs)].filter(s => /[a-zA-Z0-9]/.test(s) && s.length <= 100);
+      // ── Step 2: Apply deterministic modification ─────────────────
+      const modified = new Uint8Array(buffer.byteLength);
+      modified.set(bytes);
+      const result = applyDeterministicMod(modified, ecuInfo, order.service, fileSize);
 
-      setStatus('🤖 Asking AI for precise byte patches...');
-
-      const tunePrompt = `You are a senior automotive ECU tuning engineer. Your task is to provide EXACT byte-level patches to apply the requested modification to this ECU binary.
-
-ECU IDENTIFICATION (from prior analysis):
-Manufacturer: ${ecuReport.manufacturer || 'Unknown'}
-Platform: ${ecuReport.platform || 'Unknown'}
-Hardware Number: ${ecuReport.hardwareNumber || 'Unknown'}
-Software Version: ${ecuReport.softwareVersion || 'Unknown'}
-Calibration: ${ecuReport.calVersion || 'Unknown'}
-Vehicle: ${ecuReport.vehicleCompatibility || order.vehicle || 'Unknown'}
-Confidence: ${ecuReport.confidence || 0}%
-Checksum Type: ${ecuReport.checksum || 'Unknown'}
-Admin Notes from Analysis: ${ecuReport.adminNotes || 'None'}
-
-REQUESTED SERVICE: ${order.service}
-Customer Vehicle: ${order.vehicle || 'Not stated'}
-Customer Engine: ${order.engine || 'Not stated'}
-Customer ECU Note: ${order.ecuType || 'Not stated'}
-File Size: ${fileSize} bytes (${(fileSize/1024).toFixed(1)} KB)
-
-STRINGS EXTRACTED FROM BINARY:
-${uniqueStrs.slice(0, 150).join('\n')}
-
-HEX WINDOWS (${hexWindows.length} samples across full file):
-${hexWindows.join('\n')}
-
-INSTRUCTIONS:
-Using your knowledge of the ${ecuReport.manufacturer || ''} ${ecuReport.platform || ''} platform:
-1. Identify the exact byte offsets and values for the "${order.service}" modification
-2. Provide patches as decimal offsets with hex values
-3. Verify your patches are consistent with the hex samples provided
-4. If multiple instances of a map exist, patch all of them
-5. Include checksum recalculation info if the ECU requires it
-6. If you CANNOT determine exact offsets with reasonable confidence, set cannotApply to true
-
-Return valid JSON only, no markdown:
-{
-  "cannotApply": false,
-  "reason": "",
-  "patches": [
-    {
-      "offset": 12345,
-      "original": "ff8b00a0",
-      "replacement": "00000000",
-      "description": "EGR duty cycle map entry — zeroed to disable EGR"
-    }
-  ],
-  "checksumRequired": true,
-  "checksumInstructions": "e.g. Bosch EDC17 CRC32 block 0x0000-0x7FFB stored at 0x7FFC. Recalculate after patching.",
-  "technicalNotes": "Summary of what was changed and expected result",
-  "safetyLevel": "safe"
-}`;
-
-      const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openAIKey}` },
-        body: JSON.stringify({
-          model: 'gpt-4o',
-          messages: [
-            { role: 'system', content: 'You are an expert ECU tuning engineer. Return valid JSON only, no markdown.' },
-            { role: 'user', content: tunePrompt }
-          ],
-          temperature: 0.05,
-          max_tokens: 2500,
-          response_format: { type: 'json_object' }
-        })
-      });
-
-      if (!aiRes.ok) {
-        const errText = await aiRes.text();
-        throw new Error(`OpenAI error ${aiRes.status}: ${errText.slice(0,300)}`);
-      }
-
-      const aiData = await aiRes.json();
-      const rawText = (aiData.choices[0].message.content || '').trim();
-      let tuneResult;
-      try {
-        const m = rawText.match(/\{[\s\S]*\}/);
-        tuneResult = JSON.parse(m ? m[0] : rawText);
-      } catch(pe) { throw new Error('AI returned malformed JSON — try again'); }
-
-      if (tuneResult.cannotApply) {
+      if (result.cannotApply) {
         await fsUpdate('orders', orderId, {
           tuneAttemptedAt: new Date().toISOString(),
           tuneResult: 'manual_required',
-          tuneNotes: tuneResult.reason || 'Unknown ECU or insufficient binary evidence',
+          tuneNotes: result.reason,
           status: 'processing'
         });
         const idx = allOrders.findIndex(o => o.id === orderId);
-        if (idx >= 0) Object.assign(allOrders[idx], { tuneResult: 'manual_required', tuneNotes: tuneResult.reason });
-        setStatus(`⚠️ AI cannot auto-apply: <b style="color:#fff">${tuneResult.reason || 'Insufficient ECU knowledge'}</b><br>Order flagged for manual processing.`, '#ff9800');
-        if (btn) { btn.disabled = false; btn.textContent = '⚙️ Retry Tune'; }
+        if (idx >= 0) Object.assign(allOrders[idx], { tuneResult: 'manual_required', tuneNotes: result.reason });
+        setStatus(`⚠️ Cannot auto-apply: <b style="color:#fff">${result.reason}</b><br>Order flagged for manual processing.`, '#ff9800');
+        if (btn) { btn.disabled = false; btn.textContent = '⚙️ Retry'; }
         return;
       }
 
-      const patches = tuneResult.patches || [];
-      if (patches.length === 0) throw new Error('AI returned no patches — try re-analysing the ECU first');
-
-      setStatus(`🔧 Applying ${patches.length} patch(es) to binary...`);
-
-      // Apply patches to a fresh copy of the buffer
-      const modified = new Uint8Array(buffer.byteLength);
-      modified.set(bytes);
-
-      let appliedCount = 0;
-      const patchLog = [];
-
-      for (const patch of patches) {
-        const offset = parseInt(patch.offset);
-        if (isNaN(offset) || offset < 0 || offset >= fileSize) {
-          patchLog.push(`⚠️ Skipped: offset ${patch.offset} out of range`);
-          continue;
-        }
-        const replHex = (patch.replacement || '').toLowerCase().replace(/[\s]/g, '');
-        if (!replHex || replHex.length % 2 !== 0) {
-          patchLog.push(`⚠️ Skipped: invalid replacement hex at offset ${patch.offset}`);
-          continue;
-        }
-        const replBytes = [];
-        for (let i = 0; i < replHex.length; i += 2) replBytes.push(parseInt(replHex.substr(i, 2), 16));
-
-        // Optionally verify original bytes (warn but still apply)
-        const origHex = (patch.original || '').toLowerCase().replace(/[\s]/g, '');
-        if (origHex && origHex.length >= 2) {
-          let mismatch = false;
-          for (let i = 0; i < origHex.length / 2; i++) {
-            const expected = parseInt(origHex.substr(i*2, 2), 16);
-            if (modified[offset + i] !== expected) { mismatch = true; break; }
-          }
-          if (mismatch) patchLog.push(`⚠️ Original byte mismatch at 0x${offset.toString(16).toUpperCase()} — applied anyway`);
-        }
-
-        for (let i = 0; i < replBytes.length; i++) {
-          if (offset + i < fileSize) modified[offset + i] = replBytes[i];
-        }
-        appliedCount++;
-        patchLog.push(`✅ 0x${offset.toString(16).toUpperCase().padStart(6,'0')}: ${patch.description || 'patched'}`);
-      }
-
-      if (appliedCount === 0) throw new Error('All patches were skipped — check ECU analysis result');
-
-      setStatus(`📤 Uploading modified file (${appliedCount} patches applied)...`);
-
-      // Upload via Firebase Storage REST API
+      // ── Step 3: Upload modified file ─────────────────────────────
+      setStatus(`📤 Uploading modified file (${result.patchCount} region(s) modified)...`);
       const origName = order.originalFileName || 'ecu.bin';
       const safeService = (order.service || 'MOD').replace(/[^a-zA-Z0-9]/g, '_');
       const modName = `NEXUS_${safeService}_${origName}`;
@@ -894,13 +748,13 @@ Return valid JSON only, no markdown:
       });
       if (!uploadRes.ok) {
         const errText = await uploadRes.text();
-        throw new Error(`Storage upload failed (${uploadRes.status}): ${errText.slice(0,200)}`);
+        throw new Error(`Storage upload failed (${uploadRes.status}): ${errText.slice(0, 200)}`);
       }
       const uploadData = await uploadRes.json();
       const token = uploadData.downloadTokens;
       const modifiedFileUrl = `https://firebasestorage.googleapis.com/v0/b/${storageBucket}/o/${encodedPath}?alt=media&token=${token}`;
 
-      // Save to Firestore
+      // ── Step 4: Save to Firestore ────────────────────────────────
       await fsUpdate('orders', orderId, {
         modifiedFileUrl,
         modifiedFileName: modName,
@@ -908,33 +762,188 @@ Return valid JSON only, no markdown:
         completedAt: new Date().toISOString(),
         tuneAppliedAt: new Date().toISOString(),
         tuneResult: 'auto_applied',
-        tunePatchCount: appliedCount,
-        tuneNotes: tuneResult.technicalNotes || '',
-        tuneChecksumRequired: tuneResult.checksumRequired || false,
-        tuneChecksumInstructions: tuneResult.checksumInstructions || '',
-        tunePatchLog: patchLog.join('\n'),
-        tuneSafetyLevel: tuneResult.safetyLevel || 'unknown'
+        tunePatchCount: result.patchCount,
+        tuneNotes: result.technicalNotes || '',
+        tuneChecksumRequired: result.checksumRequired || false,
+        tunePatchLog: (result.patches || []).join('\n'),
+        tuneSafetyLevel: 'deterministic'
       });
 
       const idx = allOrders.findIndex(o => o.id === orderId);
       if (idx >= 0) Object.assign(allOrders[idx], {
         modifiedFileUrl, modifiedFileName: modName, status: 'completed',
-        tuneResult: 'auto_applied', tunePatchCount: appliedCount,
-        tuneNotes: tuneResult.technicalNotes || '',
-        tuneChecksumRequired: tuneResult.checksumRequired || false
+        tuneResult: 'auto_applied', tunePatchCount: result.patchCount,
+        tuneNotes: result.technicalNotes || '',
+        tuneChecksumRequired: result.checksumRequired || false
       });
 
-      setStatus(`✅ Done! ${appliedCount} patches applied. Customer can now download from their portal.`, '#4caf50');
+      let doneMsg = `✅ Done! ${result.patchCount} map(s) modified — customer can now download from their portal.`;
+      if (result.checksumRequired) {
+        doneMsg += `<br>⚠️ <b>Checksum recalculation required</b> before flashing. Use WinOLS or ECUFlash.`;
+      }
+      setStatus(doneMsg, '#4caf50');
       if (btn) btn.textContent = '✅ Tune Applied';
       renderStats();
       setTimeout(() => openOrder(orderId), 1200);
 
-    } catch(err) {
+    } catch (err) {
       console.error('applyTune error:', err);
       setStatus(`❌ ${err.message}`, '#f44336');
       if (btn) { btn.disabled = false; btn.textContent = '⚙️ Apply Tune & Send to Customer'; }
     }
   }
+
+  // ══════════════════════════════════════════════════════════════════
+  //  ECU DETECTION ENGINE
+  // ══════════════════════════════════════════════════════════════════
+  function detectECUFromBinary(bytes, fileSize) {
+    // Build ASCII string from entire file (fast scan)
+    let ascii = '';
+    const scanLen = Math.min(fileSize, 2097152);
+    for (let i = 0; i < scanLen; i++) {
+      const c = bytes[i];
+      ascii += (c >= 32 && c < 127) ? String.fromCharCode(c) : ' ';
+    }
+
+    // SIMOS PCR2.1 — VW/Audi 1.6 TDI, 2.0 TDI (e.g. CAY, CAYC, CAYA, CBDA, CFHC)
+    if (/CASM2P20|CASMPCR2|PCR2\.1|PCR\.2/i.test(ascii)) {
+      const partMatch = ascii.match(/\b(\d{2}[A-Z]\d{6}[A-Z]{2})\b/);
+      const swMatch = ascii.match(/\b(\d{10})\b/);
+      return { platform: 'SIMOS_PCR2', part: partMatch ? partMatch[1] : '', sw: swMatch ? swMatch[1] : '', confidence: 95 };
+    }
+    // SIMOS 18 / SIMOS 19 — newer VW/Audi platforms
+    if (/SIMOS18|SIMOS19|CASM18|CASM19/i.test(ascii)) {
+      return { platform: 'SIMOS18', part: '', confidence: 85 };
+    }
+    // Bosch EDC17 — very common (Golf, Passat, A4, etc.)
+    if (/EDC17[A-Z]\d{1,2}\b/i.test(ascii)) {
+      const m = ascii.match(/EDC17[A-Z]\d{1,2}/i);
+      return { platform: 'EDC17', part: m ? m[0].toUpperCase() : 'EDC17', confidence: 90 };
+    }
+    // Continental SID 8xx — PSA, Ford
+    if (/SID80[2-9]\b|SID20[56]\b/i.test(ascii)) {
+      return { platform: 'SID_CONTINENTAL', part: '', confidence: 82 };
+    }
+    // Delphi DCM — Renault, Nissan, Ford
+    if (/DCM3\.|DCM6\.|DCM7\./i.test(ascii)) {
+      return { platform: 'DELPHI_DCM', part: '', confidence: 80 };
+    }
+    // Marelli MJD — Fiat, Alfa
+    if (/MJD6\.|MJD8\.|MARELLI/i.test(ascii)) {
+      return { platform: 'MARELLI_MJD', part: '', confidence: 80 };
+    }
+    return { platform: 'UNKNOWN', part: '', confidence: 0 };
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  //  DETERMINISTIC MODIFICATION ENGINE
+  // ══════════════════════════════════════════════════════════════════
+  function applyDeterministicMod(bytes, ecuInfo, service, fileSize) {
+    const svc = (service || '').toLowerCase();
+
+    if (ecuInfo.platform === 'SIMOS_PCR2') {
+      if (svc.includes('egr'))                          return simosEGRDelete(bytes, fileSize);
+      if (svc.includes('dpf'))                          return { cannotApply: true, reason: 'SIMOS PCR2.1 DPF Delete requires manual calibration with WinOLS — auto-apply not yet supported' };
+      if (svc.includes('speed'))                        return { cannotApply: true, reason: 'SIMOS PCR2.1 Speed Limiter requires manual calibration' };
+      if (svc.includes('start') || svc.includes('stop')) return { cannotApply: true, reason: 'SIMOS PCR2.1 Start/Stop requires manual calibration' };
+      if (svc.includes('swirl'))                        return { cannotApply: true, reason: 'SIMOS PCR2.1 Swirl Flap requires manual calibration' };
+      if (svc.includes('adblue') || svc.includes('scr')) return { cannotApply: true, reason: 'SIMOS PCR2.1 AdBlue/SCR Delete requires manual calibration' };
+      return { cannotApply: true, reason: `Service "${service}" has no auto-apply strategy for SIMOS PCR2.1` };
+    }
+
+    if (ecuInfo.platform === 'EDC17') {
+      if (svc.includes('egr')) return edcEGRDelete(bytes, fileSize);
+      return { cannotApply: true, reason: `Service "${service}" auto-apply not yet supported for Bosch EDC17 — manual processing required` };
+    }
+
+    return {
+      cannotApply: true,
+      reason: `ECU platform "${ecuInfo.platform}" (confidence: ${ecuInfo.confidence}%) — no auto-modification strategy available. Please process manually with WinOLS.`
+    };
+  }
+
+  // ── Utility: byte pattern search ───────────────────────────────
+  function findBytes(bytes, pattern, start, end) {
+    const lim = Math.min(end, bytes.length - pattern.length);
+    outer: for (let i = start; i < lim; i++) {
+      for (let j = 0; j < pattern.length; j++) {
+        if (pattern[j] !== null && bytes[i + j] !== pattern[j]) continue outer;
+      }
+      return i;
+    }
+    return -1;
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  //  SIMOS PCR2.1 — EGR DELETE
+  //  Targets: EGR valve desired position map (KFEGRVLD equivalent)
+  //  Method: Find CASM2P20 cal header → search for EGR map signature
+  //          → zero entire map region (values 0–1023 LE16)
+  // ══════════════════════════════════════════════════════════════════
+  function simosEGRDelete(bytes, fileSize) {
+    // 1. Locate calibration base via CASM2P signature
+    const CASM = [0x43,0x41,0x53,0x4D,0x32,0x50]; // "CASM2P"
+    const casmOff = findBytes(bytes, CASM, 0, fileSize);
+    if (casmOff < 0) return { cannotApply: true, reason: 'CASM2P20 calibration signature not found — is this a full-flash backup?' };
+    const calBase = Math.max(0, casmOff - 0x10);
+
+    // 2. Search for EGR map signature:
+    //    24 consecutive zero bytes immediately followed by 0x66 0x00 (= 102 LE16 = ~10% EGR)
+    //    This is the characteristic pattern where the zero-EGR rows transition to low-EGR rows.
+    const EGR_SIG = [
+      0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+      0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+      0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+      0x66,0x00
+    ];
+    const searchEnd = Math.min(calBase + 0xC000, fileSize - 130);
+    const sigOff = findBytes(bytes, EGR_SIG, calBase, searchEnd);
+    if (sigOff < 0) return { cannotApply: true, reason: 'EGR valve position map not located — binary may use a different calibration layout. Manual processing required.' };
+
+    // 3. Determine map extent: scan forward from signature while values stay ≤ 1023
+    let mapEnd = sigOff;
+    while (mapEnd + 1 < fileSize) {
+      const v = bytes[mapEnd] | (bytes[mapEnd + 1] << 8);
+      if (v > 1023) break;
+      mapEnd += 2;
+    }
+    const mapSize = mapEnd - sigOff;
+
+    // Sanity check: expect between 56 and 300 bytes for a realistic EGR position map
+    if (mapSize < 56 || mapSize > 300) {
+      return { cannotApply: true, reason: `EGR map size (${mapSize} bytes) outside expected bounds — verify binary is a full-flash image` };
+    }
+
+    // 4. Zero the entire EGR valve position map
+    const cellCount = Math.floor(mapSize / 2);
+    for (let i = sigOff; i < mapEnd; i++) bytes[i] = 0x00;
+
+    return {
+      cannotApply: false,
+      patchCount: 1,
+      patches: [
+        `✅ EGR valve position map zeroed @ 0x${sigOff.toString(16).toUpperCase()} → 0x${(mapEnd - 1).toString(16).toUpperCase()} (${mapSize} bytes / ${cellCount} cells → all set to 0%)`
+      ],
+      checksumRequired: true,
+      technicalNotes: `SIMOS PCR2.1 EGR Delete — ${cellCount} EGR valve position cells set to 0%. EGR valve will stay closed in all conditions. Checksum recalculation required before flashing (use WinOLS or ECMTitanium).`
+    };
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  //  BOSCH EDC17 — EGR DELETE
+  //  Method: Find EDC17 calibration region, locate EGR duty cycle map
+  // ══════════════════════════════════════════════════════════════════
+  function edcEGRDelete(bytes, fileSize) {
+    // EDC17 uses a different calibration structure
+    // EGR maps are typically 16×16 or 8×8 with values 0-100 (percent) or 0-255 (duty cycle)
+    // Signature: search for a block of values 0-200 preceded by RPM axis pattern
+    // For now, flag as manual — EDC17 has many sub-variants requiring specific strategies
+    return {
+      cannotApply: true,
+      reason: 'Bosch EDC17 EGR Delete requires variant-specific calibration — manual processing with WinOLS recommended'
+    };
+  }
+
 
   return { init, logout, showView, openOrder, closeModal, saveOrderUpdate, uploadModifiedFile, quickStatus, filterTable, refreshOrders, analyseECU, applyTune };
 })();
