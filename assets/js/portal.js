@@ -421,9 +421,32 @@ const PortalApp = (() => {
     if (!order) return;
     const modal = document.getElementById('orderModal');
     const content = document.getElementById('modalContent');
-    const date = order.createdAt ? new Date(order.createdAt.seconds * 1000).toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long', year:'numeric' }) : 'Unknown';
+    const dateVal = order.createdAt;
+    const dateMs = dateVal instanceof Date ? dateVal.getTime()
+      : (dateVal && dateVal.seconds) ? dateVal.seconds * 1000
+      : typeof dateVal === 'string' ? new Date(dateVal).getTime() : 0;
+    const date = dateMs ? new Date(dateMs).toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long', year:'numeric' }) : 'Unknown';
+
+    // ECU Analysis report (customer-facing simplified view)
     let aiSection = '';
-    if (order.aiReport) {
+    if (order.ecuReport) {
+      try {
+        const r = JSON.parse(order.ecuReport);
+        const confColor = r.confidence >= 80 ? '#4caf50' : r.confidence >= 60 ? '#ff9800' : '#f44336';
+        const riskColor = { low: '#4caf50', medium: '#ff9800', high: '#f44336' }[r.riskLevel] || '#888';
+        const warnings = Array.isArray(r.warnings) ? r.warnings : [];
+        aiSection = `<div class="ai-result-card" style="margin-top:16px">
+          <div class="ai-result-header"><span style="font-size:1.3rem">🔍</span><h4>ECU Identification Report</h4></div>
+          <div class="modal-detail-row"><span class="modal-detail-label">ECU Platform</span><span class="modal-detail-value" style="color:#90caf9;font-weight:600">${r.manufacturer || '—'} ${r.platform || ''}</span></div>
+          <div class="modal-detail-row"><span class="modal-detail-label">AI Confidence</span><span class="modal-detail-value" style="color:${confColor};font-weight:600">${r.confidence || '?'}%</span></div>
+          <div class="modal-detail-row"><span class="modal-detail-label">Vehicle Match</span><span class="modal-detail-value">${r.vehicleCompatibility || '—'}</span></div>
+          <div class="modal-detail-row"><span class="modal-detail-label">Service Assessment</span><span class="modal-detail-value">${r.serviceCompatibility || '—'}</span></div>
+          <div class="modal-detail-row"><span class="modal-detail-label">Risk Level</span><span class="modal-detail-value" style="color:${riskColor};font-weight:600">${(r.riskLevel || 'unknown').toUpperCase()}</span></div>
+          ${warnings.map(w => `<div class="ai-result-item warn" style="margin-top:8px">⚠️ ${w}</div>`).join('')}
+        </div>`;
+      } catch(e) { /* skip if report malformed */ }
+    } else if (order.aiReport && Array.isArray(order.aiReport)) {
+      // Legacy aiReport format
       aiSection = `<div class="ai-result-card">
         <div class="ai-result-header"><span style="font-size:1.4rem">🤖</span><h4>AI Processing Report</h4></div>
         ${order.aiReport.map(r => `<div class="ai-result-item ${r.warn ? 'warn' : ''}">${r.text}</div>`).join('')}

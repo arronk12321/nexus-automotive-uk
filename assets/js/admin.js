@@ -91,6 +91,7 @@ const AdminApp = (() => {
   let auth, storage;
   let allOrders = [];
   let allCustomers = [];
+  let openAIKey = null;
 
   // ── Init ─────────────────────────────────────────────────────────
   function init() {
@@ -112,6 +113,7 @@ const AdminApp = (() => {
       }
     });
     document.getElementById('adminLoginForm').addEventListener('submit', handleAdminLogin);
+    loadOpenAIKey();
   }
 
   async function handleAdminLogin(e) {
@@ -297,6 +299,23 @@ const AdminApp = (() => {
           <a href="${order.originalFileUrl}" target="_blank" class="download-btn" style="font-size:0.82rem;padding:7px 14px">⬇ Download Original</a>
         </div>
       </div>` : ''}
+      ${(() => {
+        if (!order.originalFileUrl) return '';
+        if (order.ecuReport) {
+          let report = null;
+          try { report = JSON.parse(order.ecuReport); } catch(e) {}
+          return `<div class="admin-section">
+            <h3>🤖 ECU Analysis <span style="font-size:0.72rem;font-weight:400;color:#4caf50;margin-left:8px">✓ Identified</span></h3>
+            ${report ? renderECUReport(report, id) : '<div style="color:#f44336;font-size:0.83rem">Could not parse report — try re-analysing.</div>'}
+          </div>`;
+        }
+        return `<div class="admin-section">
+          <h3>🤖 ECU Analysis</h3>
+          <p style="color:#666;font-size:0.82rem;margin:0 0 14px">AI will analyse the uploaded ECU binary — detecting platform, software version, checksum type, and service compatibility.</p>
+          <button class="btn-blue-sm" id="analyseBtn" onclick="AdminApp.analyseECU('${id}')">🤖 Analyse ECU File</button>
+          <div id="analyseStatus" style="display:none;margin-top:10px;font-size:0.82rem;color:#888;line-height:1.5"></div>
+        </div>`;
+      })()}
       ${aiSection}
       <div class="admin-section">
         <h3>Update Order</h3>
@@ -412,7 +431,184 @@ const AdminApp = (() => {
     }
   }
 
-  return { init, logout, showView, openOrder, closeModal, saveOrderUpdate, uploadModifiedFile, quickStatus, filterTable, refreshOrders };
+  // ── OpenAI / ECU Analysis ──────────────────────────────────────────
+  async function loadOpenAIKey() {
+    try {
+      const res = await fetch(`${fsBase()}/settings/openai`);
+      if (!res.ok) return;
+      const doc = await res.json();
+      if (doc.fields && doc.fields.apiKey) openAIKey = fsValToJs(doc.fields.apiKey);
+    } catch(e) { console.warn('OpenAI key not loaded:', e); }
+  }
+
+  function renderECUReport(report, orderId) {
+    const riskColor = { low: '#4caf50', medium: '#ff9800', high: '#f44336' }[report.riskLevel] || '#888';
+    const confColor = report.confidence >= 80 ? '#4caf50' : report.confidence >= 60 ? '#ff9800' : '#f44336';
+    const warnings = Array.isArray(report.warnings) ? report.warnings : [];
+    return `
+      <div style="background:#111;border:1px solid #2a2a2a;border-radius:10px;padding:16px;margin-top:4px">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px">
+          <div>
+            <div style="font-size:1.05rem;font-weight:700;color:#fff">${report.manufacturer || '—'} ${report.platform || ''}</div>
+            <div style="font-size:0.78rem;color:#666;margin-top:3px">${report.vehicleCompatibility || ''}</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0;margin-left:12px">
+            <div style="font-size:1.2rem;font-weight:700;color:${confColor}">${report.confidence || '?'}%</div>
+            <div style="font-size:0.7rem;color:#555;text-transform:uppercase;letter-spacing:0.5px">confidence</div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+          <div style="background:#0d0d0d;border-radius:6px;padding:10px">
+            <div style="font-size:0.68rem;color:#555;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Software Version</div>
+            <div style="font-size:0.82rem;color:#e5e5e5;word-break:break-all">${report.softwareVersion || 'Unknown'}</div>
+          </div>
+          <div style="background:#0d0d0d;border-radius:6px;padding:10px">
+            <div style="font-size:0.68rem;color:#555;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Checksum Type</div>
+            <div style="font-size:0.82rem;color:#e5e5e5">${report.checksum || 'Unknown'}</div>
+          </div>
+          <div style="background:#0d0d0d;border-radius:6px;padding:10px">
+            <div style="font-size:0.68rem;color:#555;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Risk Level</div>
+            <div style="font-size:0.85rem;font-weight:600;color:${riskColor}">${(report.riskLevel || 'unknown').toUpperCase()}</div>
+          </div>
+          <div style="background:#0d0d0d;border-radius:6px;padding:10px">
+            <div style="font-size:0.68rem;color:#555;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Service Fit</div>
+            <div style="font-size:0.78rem;color:#e5e5e5;line-height:1.4">${report.serviceCompatibility || '—'}</div>
+          </div>
+        </div>
+        ${report.adminNotes ? `<div style="background:#1a1500;border:1px solid #3a2f00;border-radius:6px;padding:10px;margin-bottom:10px"><div style="font-size:0.68rem;color:#ffc107;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Technician Note</div><div style="font-size:0.83rem;color:#ffe082">${report.adminNotes}</div></div>` : ''}
+        ${warnings.length ? `<div style="background:#1a0000;border:1px solid #3a0000;border-radius:6px;padding:10px;margin-bottom:10px">${warnings.map(w => `<div style="font-size:0.82rem;color:#ef9a9a;padding:2px 0">⚠️ ${w}</div>`).join('')}</div>` : ''}
+        ${report.additionalInfo ? `<div style="font-size:0.78rem;color:#555;margin-bottom:12px;line-height:1.5">${report.additionalInfo}</div>` : ''}
+        <button class="btn-blue-sm" onclick="AdminApp.analyseECU('${orderId}')" style="margin-top:4px;opacity:0.7">🔄 Re-analyse</button>
+      </div>`;
+  }
+
+  async function analyseECU(orderId) {
+    if (!openAIKey) { alert('OpenAI API key not found in settings. Contact support.'); return; }
+    const order = allOrders.find(o => o.id === orderId);
+    if (!order || !order.originalFileUrl) { alert('No ECU file attached to this order.'); return; }
+
+    const btn = document.getElementById('analyseBtn');
+    const statusEl = document.getElementById('analyseStatus');
+    if (btn) { btn.disabled = true; btn.textContent = '🔄 Analysing...'; }
+    if (statusEl) { statusEl.style.display = 'block'; statusEl.style.color = '#888'; statusEl.textContent = '⬇️ Downloading ECU file...'; }
+
+    try {
+      const response = await fetch(order.originalFileUrl);
+      if (!response.ok) throw new Error('Could not download ECU file from Storage');
+      const buffer = await response.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+
+      if (statusEl) statusEl.textContent = '🔍 Extracting binary features...';
+
+      const fileSizeBytes = bytes.length;
+      const fileSizeKB = (fileSizeBytes / 1024).toFixed(1);
+      const toHex = arr => Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join(' ');
+
+      // First 256 bytes (file header / magic bytes)
+      const header = toHex(bytes.slice(0, 256));
+      // Bytes 256–512 (often contains ECU identifiers)
+      const mid = toHex(bytes.slice(256, 512));
+      // Last 128 bytes (footer / checksum area)
+      const footer = toHex(bytes.slice(-128));
+
+      // Extract printable ASCII strings ≥ 4 chars from first 64KB
+      const strings = [];
+      let cur = '';
+      const limit = Math.min(bytes.length, 65536);
+      for (let i = 0; i < limit; i++) {
+        const c = bytes[i];
+        if (c >= 32 && c <= 126) { cur += String.fromCharCode(c); }
+        else { if (cur.length >= 4) strings.push(cur); cur = ''; }
+      }
+      if (cur.length >= 4) strings.push(cur);
+      const uniqueStrings = [...new Set(strings)].filter(s => s.length <= 80).slice(0, 100).join('\n');
+
+      if (statusEl) statusEl.textContent = '🤖 Sending to GPT-4o for analysis...';
+
+      const prompt = `You are an expert automotive ECU binary file analyst with deep knowledge of all major ECU platforms: Bosch (EDC15/16/17, ME7/9/17/18, MED9/17, MD1, MG1), Siemens/Continental (SID305/307, PCR2.1, EMS3132, SIM2K), Delphi (DCM3.5/6.2, MT80/86), Denso, Magneti Marelli (6J, 8G, 8GMK), Simos (7/8.1/10/18/19), Tricore platforms, and all others.
+
+Analyse this ECU .bin file:
+
+FILE SIZE: ${fileSizeBytes} bytes (${fileSizeKB} KB)
+REQUESTED SERVICE: ${order.service}
+VEHICLE: ${order.vehicle || 'Unknown'}
+ENGINE: ${order.engine || 'Unknown'}
+CUSTOMER-STATED ECU: ${order.ecuType || 'Not specified'}
+REG PLATE: ${order.reg || 'Unknown'}
+
+BYTES 0-255 (hex):
+${header}
+
+BYTES 256-511 (hex):
+${mid}
+
+LAST 128 BYTES (hex):
+${footer}
+
+EXTRACTED ASCII STRINGS (first 64KB):
+${uniqueStrings}
+
+Common ECU file sizes for reference: 128KB=131072, 256KB=262144, 512KB=524288, 1MB=1048576, 2MB=2097152, 4MB=4194304.
+
+Respond ONLY with a valid JSON object, no markdown wrapping:
+{
+  "manufacturer": "e.g. Bosch",
+  "platform": "e.g. EDC17C10",
+  "softwareVersion": "e.g. 1037395048 or Unknown",
+  "vehicleCompatibility": "e.g. VW/Audi 2.0 TDI (140bhp) 2008-2012",
+  "confidence": 87,
+  "serviceCompatibility": "concise assessment: is the requested service compatible and safe for this ECU?",
+  "riskLevel": "low",
+  "checksum": "e.g. Bosch CRC32 at 0xFFFC or Unknown",
+  "adminNotes": "key action notes for the technician",
+  "warnings": ["any critical warnings, empty array if none"],
+  "additionalInfo": "any other useful technical details the admin should know"
+}`;
+
+      const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openAIKey}` },
+        body: JSON.stringify({ model: 'gpt-4o', messages: [{ role: 'user', content: prompt }], temperature: 0.1, max_tokens: 900 })
+      });
+
+      if (!aiRes.ok) {
+        const errText = await aiRes.text();
+        throw new Error(`OpenAI ${aiRes.status}: ${errText.slice(0, 200)}`);
+      }
+
+      const aiData = await aiRes.json();
+      const rawText = (aiData.choices[0].message.content || '').trim();
+      let report;
+      try {
+        const match = rawText.match(/\{[\s\S]*\}/);
+        report = JSON.parse(match ? match[0] : rawText);
+      } catch(pe) { throw new Error('AI returned non-JSON response — try again'); }
+
+      // Save report to Firestore
+      await fsUpdate('orders', orderId, {
+        ecuReport: JSON.stringify(report),
+        ecuDetected: `${report.manufacturer || ''} ${report.platform || ''}`.trim(),
+        ecuConfidence: report.confidence || 0,
+        ecuAnalysedAt: new Date().toISOString()
+      });
+
+      const idx = allOrders.findIndex(o => o.id === orderId);
+      if (idx >= 0) Object.assign(allOrders[idx], {
+        ecuReport: JSON.stringify(report),
+        ecuDetected: `${report.manufacturer || ''} ${report.platform || ''}`.trim(),
+        ecuConfidence: report.confidence || 0
+      });
+
+      openOrder(orderId); // refresh modal with report
+
+    } catch(err) {
+      console.error('ECU analysis error:', err);
+      if (statusEl) { statusEl.textContent = `❌ ${err.message}`; statusEl.style.color = '#f44336'; }
+      if (btn) { btn.disabled = false; btn.textContent = '🤖 Analyse ECU'; }
+    }
+  }
+
+  return { init, logout, showView, openOrder, closeModal, saveOrderUpdate, uploadModifiedFile, quickStatus, filterTable, refreshOrders, analyseECU };
 })();
 
 document.addEventListener('DOMContentLoaded', () => AdminApp.init());
