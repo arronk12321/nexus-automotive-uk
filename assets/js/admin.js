@@ -1,29 +1,115 @@
 /* ================================================================
-   NEXUS AUTOMOTIVE UK — ADMIN PORTAL JS
-   Full order management, file upload/return, status updates
+   NEXUS AUTOMOTIVE UK — ADMIN PORTAL JS (REST API — no Firebase SDK for Firestore)
    ================================================================ */
 
 const AdminApp = (() => {
-  let db, auth, storage;
+
+  // ── Firestore REST helpers ──────────────────────────────────────
+  function fsBase() {
+    const cfg = window.NEXUS_FB_CONFIG;
+    return `https://firestore.googleapis.com/v1/projects/${cfg.projectId}/databases/nexus/documents`;
+  }
+
+  async function fsList(collection) {
+    const url = `${fsBase()}/${collection}?pageSize=300`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Firestore ${res.status}`);
+    const data = await res.json();
+    return (data.documents || []).map(fsDocToObj);
+  }
+
+  async function fsUpdate(collection, docId, fields) {
+    const mask = Object.keys(fields).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join('&');
+    const url = `${fsBase()}/${collection}/${docId}?${mask}`;
+    const res = await fetch(url, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields: toFsFields(fields) })
+    });
+    if (!res.ok) throw new Error(`Firestore ${res.status}`);
+    return res.json();
+  }
+
+  function toFsFields(obj) {
+    const f = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (typeof v === 'string') f[k] = { stringValue: v };
+      else if (typeof v === 'number') f[k] = { doubleValue: v };
+      else if (typeof v === 'boolean') f[k] = { booleanValue: v };
+      else if (v instanceof Date) f[k] = { timestampValue: v.toISOString() };
+      else f[k] = { nullValue: null };
+    }
+    return f;
+  }
+
+  function fsDocToObj(doc) {
+    if (!doc || !doc.fields) return { id: doc.name.split('/').pop() };
+    const id = doc.name.split('/').pop();
+    const obj = { id };
+    for (const [k, v] of Object.entries(doc.fields)) {
+      obj[k] = fsValToJs(v);
+    }
+    return obj;
+  }
+
+  function fsValToJs(v) {
+    if ('stringValue' in v) return v.stringValue;
+    if ('integerValue' in v) return parseInt(v.integerValue);
+    if ('doubleValue' in v) return parseFloat(v.doubleValue);
+    if ('booleanValue' in v) return v.booleanValue;
+    if ('timestampValue' in v) return new Date(v.timestampValue);
+    if ('nullValue' in v) return null;
+    if ('mapValue' in v) {
+      const m = {};
+      for (const [k2, v2] of Object.entries(v.mapValue.fields || {})) m[k2] = fsValToJs(v2);
+      return m;
+    }
+    if ('arrayValue' in v) return (v.arrayValue.values || []).map(fsValToJs);
+    return null;
+  }
+
+  // Normalise any timestamp type → ms
+  function getTs(val) {
+    if (!val) return 0;
+    if (val instanceof Date) return val.getTime();
+    if (typeof val === 'object' && val.seconds) return val.seconds * 1000;
+    if (typeof val === 'string') return new Date(val).getTime();
+    return 0;
+  }
+
+  function formatDate(val) {
+    const ms = getTs(val);
+    return ms ? new Date(ms).toLocaleDateString('en-GB') : '—';
+  }
+
+  function formatDateTime(val) {
+    const ms = getTs(val);
+    return ms ? new Date(ms).toLocaleString('en-GB') : '—';
+  }
+
+  // ── State ────────────────────────────────────────────────────────
+  let auth, storage;
   let allOrders = [];
   let allCustomers = [];
-  const ADMIN_EMAILS = ['admin@nexusautomotive.co.uk', 'nexusautomotiveuk@gmail.com'];
 
+  // ── Init ─────────────────────────────────────────────────────────
   function init() {
     if (!window.NEXUS_FB_CONFIG || window.NEXUS_FB_CONFIG.apiKey === 'YOUR_API_KEY') {
       document.getElementById('adminLoginScreen').innerHTML = `
         <div class="auth-card"><div class="auth-logo"><span class="logo-n">N</span>EXUS</div>
         <h2 class="auth-title" style="color:#ffc107">Firebase Not Configured</h2>
-        <p style="color:#888;text-align:center;font-size:0.85rem">Please set up Firebase first — see <a href="portal.html" style="color:#2196f3">portal.html</a> for instructions.</p></div>`;
+        <p style="color:#888;text-align:center;font-size:0.85rem">Please set up Firebase first — see <a href="portal.html" style="color:#2196f3">portal.html</a>.</p></div>`;
       return;
     }
     if (!firebase.apps.length) firebase.initializeApp(window.NEXUS_FB_CONFIG);
     auth = firebase.auth();
-    db = firebase.firestore();
     storage = firebase.storage();
     auth.onAuthStateChanged(user => {
       if (user) { showDashboard(); loadOrders(); loadCustomers(); }
-      else { document.getElementById('adminLoginScreen').classList.remove('hidden'); document.getElementById('adminDashboard').classList.add('hidden'); }
+      else {
+        document.getElementById('adminLoginScreen').classList.remove('hidden');
+        document.getElementById('adminDashboard').classList.add('hidden');
+      }
     });
     document.getElementById('adminLoginForm').addEventListener('submit', handleAdminLogin);
   }
@@ -49,44 +135,44 @@ const AdminApp = (() => {
   function showDashboard() {
     document.getElementById('adminLoginScreen').classList.add('hidden');
     document.getElementById('adminDashboard').classList.remove('hidden');
+    const user = auth && auth.currentUser;
+    if (user) {
+      const nameEl = document.getElementById('adminUserName');
+      if (nameEl) nameEl.textContent = user.email;
+    }
   }
 
+  // ── Data Loading ─────────────────────────────────────────────────
   async function loadOrders() {
     try {
-      // Use simple get without orderBy to avoid index requirements
-      const snap = await db.collection('orders').get();
-      allOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      // Sort client-side by createdAt descending
-      allOrders.sort((a, b) => {
-        const ta = a.createdAt ? a.createdAt.seconds : 0;
-        const tb = b.createdAt ? b.createdAt.seconds : 0;
-        return tb - ta;
-      });
+      allOrders = await fsList('orders');
+      allOrders.sort((a, b) => getTs(b.createdAt) - getTs(a.createdAt));
       renderStats();
       renderRecentOrders();
       renderAllOrdersTable(allOrders);
       renderFilteredOrders('pending', 'adminPendingOrders');
       renderFilteredOrders('processing', 'adminProcessingOrders');
       const pending = allOrders.filter(o => o.status === 'pending').length;
-      document.getElementById('pendingBadge').textContent = pending;
+      const badge = document.getElementById('pendingBadge');
+      if (badge) badge.textContent = pending;
     } catch(e) {
       console.error('loadOrders error:', e);
-      // Show visible error on dashboard
       const el = document.getElementById('adminRecentOrders');
-      if (el) el.innerHTML = `<div style="padding:20px;color:#f44336;font-size:0.85rem">⚠️ Error loading orders: ${e.message || e.code || 'Permission denied — check Firestore rules.'}</div>`;
+      if (el) el.innerHTML = `<div style="padding:20px;color:#f44336;font-size:0.85rem">⚠️ Error loading orders: ${e.message || 'Permission denied — check Firestore rules.'}</div>`;
     }
   }
 
   async function loadCustomers() {
     try {
-      const snap = await db.collection('users').orderBy('createdAt', 'desc').get();
-      allCustomers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      allCustomers = await fsList('users');
+      allCustomers.sort((a, b) => getTs(b.createdAt) - getTs(a.createdAt));
       renderCustomers();
     } catch(e) { console.error('loadCustomers:', e); }
   }
 
   function refreshOrders() { loadOrders(); loadCustomers(); }
 
+  // ── Render ───────────────────────────────────────────────────────
   function renderStats() {
     document.getElementById('aStatTotal').textContent = allOrders.length;
     document.getElementById('aStatPending').textContent = allOrders.filter(o => o.status === 'pending').length;
@@ -96,8 +182,7 @@ const AdminApp = (() => {
   }
 
   function renderRecentOrders() {
-    const el = document.getElementById('adminRecentOrders');
-    el.innerHTML = buildTable(allOrders.slice(0, 10));
+    document.getElementById('adminRecentOrders').innerHTML = buildTable(allOrders.slice(0, 10));
   }
 
   function renderAllOrdersTable(orders) {
@@ -113,15 +198,18 @@ const AdminApp = (() => {
 
   function renderCustomers() {
     const el = document.getElementById('adminCustomers');
-    if (!allCustomers.length) { el.innerHTML = `<div class="empty-state" style="padding:40px;text-align:center;color:#555"><p>No customers yet.</p></div>`; return; }
+    if (!allCustomers.length) {
+      el.innerHTML = `<div class="empty-state" style="padding:40px;text-align:center;color:#555"><p>No customers yet.</p></div>`;
+      return;
+    }
     el.innerHTML = `<table class="admin-table"><thead><tr>
       <th>Name</th><th>Email</th><th>Phone</th><th>Orders</th><th>Joined</th>
     </tr></thead><tbody>${allCustomers.map(c => {
       const orders = allOrders.filter(o => o.userId === c.id).length;
-      const joined = c.createdAt ? new Date(c.createdAt.seconds * 1000).toLocaleDateString('en-GB') : '—';
       return `<tr><td style="color:#fff;font-weight:500">${c.firstName || ''} ${c.lastName || ''}</td>
         <td>${c.email || '—'}</td><td>${c.phone || '—'}</td>
-        <td><span class="badge badge-processing">${orders}</span></td><td>${joined}</td></tr>`;
+        <td><span class="badge badge-processing">${orders}</span></td>
+        <td>${formatDate(c.createdAt)}</td></tr>`;
     }).join('')}</tbody></table>`;
   }
 
@@ -130,7 +218,6 @@ const AdminApp = (() => {
     return `<table class="admin-table"><thead><tr>
       <th>Order ID</th><th>Customer</th><th>Vehicle</th><th>Service</th><th>Status</th><th>Price</th><th>Date</th><th>Actions</th>
     </tr></thead><tbody>${orders.map(o => {
-      const date = o.createdAt ? new Date(o.createdAt.seconds * 1000).toLocaleDateString('en-GB') : '—';
       const aiTag = o.aiProcessed ? '<span style="color:#ce93d8;margin-left:4px" title="AI Processed">🤖</span>' : '';
       return `<tr onclick="AdminApp.openOrder('${o.id}')">
         <td style="font-family:monospace;font-size:0.78rem;color:#666">#${o.id.slice(-8).toUpperCase()}</td>
@@ -139,7 +226,7 @@ const AdminApp = (() => {
         <td>${o.service || '—'}${aiTag}</td>
         <td><span class="badge badge-${o.status || 'pending'}">${o.status || 'pending'}</span></td>
         <td style="color:#4caf50">${o.price ? '£' + o.price : '<span style="color:#555">—</span>'}</td>
-        <td style="color:#666">${date}</td>
+        <td style="color:#666">${formatDate(o.createdAt)}</td>
         <td onclick="event.stopPropagation()">
           <div class="admin-actions">
             <button class="action-btn" onclick="AdminApp.openOrder('${o.id}')">View</button>
@@ -155,7 +242,8 @@ const AdminApp = (() => {
     const q = (document.getElementById('adminSearch').value || '').toLowerCase();
     const f = document.getElementById('adminStatusFilter').value;
     const filtered = allOrders.filter(o => {
-      const matchQ = !q || (o.userName || '').toLowerCase().includes(q) || (o.userEmail || '').toLowerCase().includes(q) || (o.vehicle || '').toLowerCase().includes(q) || (o.reg || '').toLowerCase().includes(q) || (o.service || '').toLowerCase().includes(q);
+      const matchQ = !q || (o.userName || '').toLowerCase().includes(q) || (o.userEmail || '').toLowerCase().includes(q)
+        || (o.vehicle || '').toLowerCase().includes(q) || (o.reg || '').toLowerCase().includes(q) || (o.service || '').toLowerCase().includes(q);
       const matchF = f === 'all' || o.status === f;
       return matchQ && matchF;
     });
@@ -178,7 +266,6 @@ const AdminApp = (() => {
     if (!order) return;
     const modal = document.getElementById('adminModal');
     const content = document.getElementById('adminModalContent');
-    const date = order.createdAt ? new Date(order.createdAt.seconds * 1000).toLocaleString('en-GB') : '—';
     let aiSection = '';
     if (order.aiReport && order.aiReport.length) {
       aiSection = `<div class="ai-result-card"><div class="ai-result-header"><span>🤖</span><h4>AI Processing Report</h4></div>
@@ -188,11 +275,10 @@ const AdminApp = (() => {
       <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;gap:12px">
         <div>
           <h3 style="color:#fff;margin:0 0 4px;font-size:1.2rem">${order.service}</h3>
-          <div style="font-family:monospace;font-size:0.78rem;color:#666">#${id.slice(-8).toUpperCase()} · ${date}</div>
+          <div style="font-family:monospace;font-size:0.78rem;color:#666">#${id.slice(-8).toUpperCase()} · ${formatDateTime(order.createdAt)}</div>
         </div>
         <span class="badge badge-${order.status || 'pending'}" style="font-size:0.82rem;padding:5px 12px;flex-shrink:0">${order.status}</span>
       </div>
-
       <div class="admin-section">
         <h3>Customer & Vehicle</h3>
         <div class="modal-detail-row"><span class="modal-detail-label">Customer</span><span class="modal-detail-value">${order.userName || '—'}</span></div>
@@ -204,7 +290,6 @@ const AdminApp = (() => {
         <div class="modal-detail-row"><span class="modal-detail-label">ECU Type</span><span class="modal-detail-value">${order.ecuType || 'Unknown'}</span></div>
         ${order.notes ? `<div class="modal-detail-row"><span class="modal-detail-label">Notes</span><span class="modal-detail-value">${order.notes}</span></div>` : ''}
       </div>
-
       ${order.originalFileUrl ? `<div class="admin-section">
         <h3>Original ECU File</h3>
         <div style="display:flex;align-items:center;justify-content:space-between">
@@ -212,9 +297,7 @@ const AdminApp = (() => {
           <a href="${order.originalFileUrl}" target="_blank" class="download-btn" style="font-size:0.82rem;padding:7px 14px">⬇ Download Original</a>
         </div>
       </div>` : ''}
-
       ${aiSection}
-
       <div class="admin-section">
         <h3>Update Order</h3>
         <div class="admin-form-group"><label>Status</label>
@@ -234,7 +317,6 @@ const AdminApp = (() => {
         <button class="btn-blue-sm" onclick="AdminApp.saveOrderUpdate('${id}')">Save Changes</button>
         <div id="saveMsg" class="info-msg" style="display:none"></div>
       </div>
-
       <div class="admin-section">
         <h3>Upload Modified File</h3>
         <p style="color:#666;font-size:0.82rem;margin:0 0 12px">Upload the processed ECU file — it will be made available in the customer's portal immediately.</p>
@@ -262,8 +344,8 @@ const AdminApp = (() => {
     try {
       const update = { status, adminNotes: notes };
       if (price) update.price = parseFloat(price);
-      if (status === 'completed') update.completedAt = firebase.firestore.FieldValue.serverTimestamp();
-      await db.collection('orders').doc(id).update(update);
+      if (status === 'completed') update.completedAt = new Date();
+      await fsUpdate('orders', id, update);
       const idx = allOrders.findIndex(o => o.id === id);
       if (idx >= 0) allOrders[idx] = { ...allOrders[idx], ...update };
       msg.textContent = '✅ Order updated successfully!';
@@ -299,7 +381,7 @@ const AdminApp = (() => {
       });
       await task;
       const url = await ref.getDownloadURL();
-      await db.collection('orders').doc(orderId).update({ modifiedFileUrl: url, modifiedFileName: file.name, status: 'completed', completedAt: firebase.firestore.FieldValue.serverTimestamp() });
+      await fsUpdate('orders', orderId, { modifiedFileUrl: url, modifiedFileName: file.name, status: 'completed', completedAt: new Date() });
       const idx = allOrders.findIndex(o => o.id === orderId);
       if (idx >= 0) allOrders[idx] = { ...allOrders[idx], modifiedFileUrl: url, status: 'completed' };
       bar.style.width = '100%';
@@ -316,7 +398,7 @@ const AdminApp = (() => {
 
   async function quickStatus(id, status) {
     try {
-      await db.collection('orders').doc(id).update({ status });
+      await fsUpdate('orders', id, { status });
       const idx = allOrders.findIndex(o => o.id === id);
       if (idx >= 0) allOrders[idx].status = status;
       renderStats(); renderRecentOrders(); renderAllOrdersTable(allOrders);
