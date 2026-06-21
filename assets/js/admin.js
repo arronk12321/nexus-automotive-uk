@@ -741,9 +741,18 @@ Respond with valid JSON only (no markdown):
       const encodedPath = encodeURIComponent(storagePath);
       const uploadUrl = `https://firebasestorage.googleapis.com/v0/b/${storageBucket}/o/${encodedPath}`;
 
+      // Get admin ID token for authenticated Storage upload
+      let uploadHeaders = { 'Content-Type': 'application/octet-stream' };
+      if (auth && auth.currentUser) {
+        try {
+          const idToken = await auth.currentUser.getIdToken(true);
+          uploadHeaders['Authorization'] = `Bearer ${idToken}`;
+        } catch(e) { console.warn('Could not get ID token:', e); }
+      }
+
       const uploadRes = await fetch(uploadUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/octet-stream' },
+        headers: uploadHeaders,
         body: modified
       });
       if (!uploadRes.ok) {
