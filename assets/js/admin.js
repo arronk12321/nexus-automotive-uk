@@ -790,6 +790,9 @@ Respond with valid JSON only (no markdown):
       if (result.checksumRequired) {
         doneMsg += `<br>⚠️ <b>Checksum recalculation required</b> before flashing. Use WinOLS or ECUFlash.`;
       }
+      if (result.manualRequired && result.manualRequired.length > 0) {
+        doneMsg += `<br>📋 <b>${result.manualRequired.length} service(s) queued for manual processing</b> — see technician notes.`;
+      }
       setStatus(doneMsg, '#4caf50');
       if (btn) btn.textContent = '✅ Tune Applied';
       renderStats();
@@ -848,26 +851,61 @@ Respond with valid JSON only (no markdown):
   //  DETERMINISTIC MODIFICATION ENGINE
   // ══════════════════════════════════════════════════════════════════
   function applyDeterministicMod(bytes, ecuInfo, service, fileSize) {
-    const svc = (service || '').toLowerCase();
+    // Support comma-separated multi-service (e.g. "EGR Delete, Swirl Flap Delete")
+    const services = (service || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
 
-    if (ecuInfo.platform === 'SIMOS_PCR2') {
-      if (svc.includes('egr'))                          return simosEGRDelete(bytes, fileSize);
-      if (svc.includes('dpf'))                          return { cannotApply: true, reason: 'SIMOS PCR2.1 DPF Delete requires manual calibration with WinOLS — auto-apply not yet supported' };
-      if (svc.includes('speed'))                        return { cannotApply: true, reason: 'SIMOS PCR2.1 Speed Limiter requires manual calibration' };
-      if (svc.includes('start') || svc.includes('stop')) return { cannotApply: true, reason: 'SIMOS PCR2.1 Start/Stop requires manual calibration' };
-      if (svc.includes('swirl'))                        return { cannotApply: true, reason: 'SIMOS PCR2.1 Swirl Flap requires manual calibration' };
-      if (svc.includes('adblue') || svc.includes('scr')) return { cannotApply: true, reason: 'SIMOS PCR2.1 AdBlue/SCR Delete requires manual calibration' };
-      return { cannotApply: true, reason: `Service "${service}" has no auto-apply strategy for SIMOS PCR2.1` };
+    let allPatches     = [];
+    let totalPatches   = 0;
+    let checksumNeeded = false;
+    let manualNeeded   = [];
+
+    for (const svc of services) {
+      let res;
+
+      if (ecuInfo.platform === 'SIMOS_PCR2') {
+        if (svc.includes('egr'))                             res = simosEGRDelete(bytes, fileSize);
+        else if (svc.includes('swirl'))                      res = simosSwirFlapDelete(bytes, fileSize);
+        else if (svc.includes('speed'))                      res = simosSpeedLimiterRemoval(bytes, fileSize);
+        else if (svc.includes('dpf'))                        res = { cannotApply: true, reason: 'SIMOS PCR2.1 DPF Delete — complex multi-map calibration required (WinOLS recommended). Queued for manual.' };
+        else if (svc.includes('adblue') || svc.includes('scr')) res = { cannotApply: true, reason: 'AdBlue/SCR Delete — variant-specific SCR catalyst maps required. Queued for manual.' };
+        else if (svc.includes('stage') || svc.includes('remap')) res = { cannotApply: true, reason: 'Stage 1 — custom torque/injection/boost calibration required. Queued for manual.' };
+        else if (svc.includes('start') || svc.includes('stop')) res = { cannotApply: true, reason: 'Start/Stop Disable — requires manual calibration.' };
+        else if (svc.includes('pops') || svc.includes('bang'))  res = { cannotApply: true, reason: 'Pops & Bangs — requires manual exhaust timing calibration.' };
+        else res = { cannotApply: true, reason: `No auto-apply strategy for "${svc}" on SIMOS PCR2.1.` };
+
+      } else if (ecuInfo.platform === 'EDC17') {
+        if (svc.includes('egr')) res = edcEGRDelete(bytes, fileSize);
+        else res = { cannotApply: true, reason: `"${svc}" auto-apply not yet supported for Bosch EDC17 — manual required.` };
+
+      } else {
+        res = { cannotApply: true, reason: `ECU platform "${ecuInfo.platform}" (${ecuInfo.confidence}% confidence) — no auto-modification strategy. Process manually with WinOLS.` };
+      }
+
+      if (res.cannotApply) {
+        manualNeeded.push(res.reason);
+      } else {
+        allPatches     = allPatches.concat(res.patches || []);
+        totalPatches  += res.patchCount || 0;
+        checksumNeeded = checksumNeeded || !!res.checksumRequired;
+      }
     }
 
-    if (ecuInfo.platform === 'EDC17') {
-      if (svc.includes('egr')) return edcEGRDelete(bytes, fileSize);
-      return { cannotApply: true, reason: `Service "${service}" auto-apply not yet supported for Bosch EDC17 — manual processing required` };
+    // Nothing auto-applied at all
+    if (allPatches.length === 0) {
+      return { cannotApply: true, reason: manualNeeded.join('\n') };
     }
+
+    // At least some services auto-applied (partial or full success)
+    const notes = allPatches.join('\n')
+      + (manualNeeded.length ? `\n\n⚠️ Queued for manual processing:\n${manualNeeded.map(r => '• ' + r).join('\n')}` : '');
 
     return {
-      cannotApply: true,
-      reason: `ECU platform "${ecuInfo.platform}" (confidence: ${ecuInfo.confidence}%) — no auto-modification strategy available. Please process manually with WinOLS.`
+      cannotApply:   false,
+      patchCount:    totalPatches,
+      patches:       allPatches,
+      checksumRequired: checksumNeeded,
+      manualRequired:   manualNeeded,   // partial-success info
+      technicalNotes:   notes
     };
   }
 
@@ -935,6 +973,102 @@ Respond with valid JSON only (no markdown):
       ],
       checksumRequired: true,
       technicalNotes: `SIMOS PCR2.1 EGR Delete — ${cellCount} EGR valve position cells set to 0%. EGR valve will stay closed in all conditions. Checksum recalculation required before flashing (use WinOLS or ECMTitanium).`
+    };
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  //  SIMOS PCR2.1 — SWIRL FLAP DELETE
+  //  Targets: Swirl flap target position map (KFDKL / KFSWIRL equiv)
+  //  Method: Unique axis-end signature (0xFF7F + RPM axis) → scan map
+  //          → zero all position cells (no actuation = open/deleted)
+  //  Validated: 2MB VW 1.6 TDI CAY bench flash (1 unique signature hit)
+  // ══════════════════════════════════════════════════════════════════
+  function simosSwirFlapDelete(bytes, fileSize) {
+    // Signature: 0x7FFF (axis sentinel) followed by 4 specific RPM axis values
+    // uniquely identifies the swirl flap position map in this calibration family
+    const SWIRL_SIG = [
+      0xFF,0x7F,                    // 0x7FFF — axis end sentinel
+      0x4E,0x0C, 0x8C,0x0A,        // RPM axis: 3150, 2700
+      0xCA,0x08, 0xCA,0x08,        // RPM axis: 2250, 2250
+      0xCA,0x08, 0xCA,0x08         // RPM axis: 2250, 2250
+    ];
+    const casm = bytes.indexOf ? -1 : -1; // unused — use findBytes below
+    const CASM = [0x43,0x41,0x53,0x4D,0x32,0x50];
+    const casmOff = findBytes(bytes, CASM, 0, fileSize);
+    if (casmOff < 0) return { cannotApply: true, reason: 'CASM2P signature not found — is this a full-flash backup?' };
+    const calBase = Math.max(0, casmOff - 0x10);
+
+    const sigOff = findBytes(bytes, SWIRL_SIG, calBase, Math.min(calBase + 0x20000, fileSize));
+    if (sigOff < 0) return { cannotApply: true, reason: 'Swirl flap position map not located — binary may be a different calibration variant. Manual processing required.' };
+
+    // Map starts immediately after the 14-byte signature
+    const mapStart = sigOff + SWIRL_SIG.length;
+
+    // Scan forward while LE16 values ≤ 1023 (10-bit position range)
+    let mapEnd = mapStart;
+    while (mapEnd + 1 < fileSize) {
+      const v = bytes[mapEnd] | (bytes[mapEnd + 1] << 8);
+      if (v > 1023) break;
+      mapEnd += 2;
+    }
+    const mapSize = mapEnd - mapStart;
+    if (mapSize < 16 || mapSize > 256) {
+      return { cannotApply: true, reason: `Swirl flap map size (${mapSize} bytes) outside expected bounds — verify binary.` };
+    }
+
+    const cellCount = Math.floor(mapSize / 2);
+    for (let i = mapStart; i < mapEnd; i++) bytes[i] = 0x00;
+
+    return {
+      cannotApply: false,
+      patchCount: 1,
+      patches: [
+        `✅ Swirl flap position map zeroed @ 0x${mapStart.toString(16).toUpperCase()} → 0x${(mapEnd-1).toString(16).toUpperCase()} (${mapSize} bytes / ${cellCount} cells → all set to 0% — flaps disabled/open)`
+      ],
+      checksumRequired: true,
+      technicalNotes: `SIMOS PCR2.1 Swirl Flap Delete — ${cellCount} position cells set to 0%. Flap motor will not actuate. Physical removal of flap paddles recommended. Checksum recalculation required before flashing.`
+    };
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  //  SIMOS PCR2.1 — SPEED LIMITER REMOVAL
+  //  Targets: VMAX scalar (250 km/h stored as LE16 0x00FA)
+  //  Method: Unique surrounding parameter signature → patch single word
+  //  Validated: 2MB VW 1.6 TDI CAY bench flash (1 unique signature hit)
+  // ══════════════════════════════════════════════════════════════════
+  function simosSpeedLimiterRemoval(bytes, fileSize) {
+    const CASM = [0x43,0x41,0x53,0x4D,0x32,0x50];
+    const casmOff = findBytes(bytes, CASM, 0, fileSize);
+    if (casmOff < 0) return { cannotApply: true, reason: 'CASM2P signature not found.' };
+    const calBase = Math.max(0, casmOff - 0x10);
+
+    // Unique 12-byte signature: [0x0708 (1800), 0x07D0 (2000), 0x00FA (250 km/h), 0x0000, 0x0064 (100), 0x0000]
+    // The 0x00FA at offset +4 within this pattern is the VMax scalar
+    const SPD_SIG = [
+      0x08,0x07,   // 1800
+      0xD0,0x07,   // 2000
+      0xFA,0x00,   // 250 km/h ← TARGET
+      0x00,0x00,
+      0x64,0x00,   // 100
+      0x00,0x00
+    ];
+    const sigOff = findBytes(bytes, SPD_SIG, calBase, Math.min(calBase + 0x10000, fileSize));
+    if (sigOff < 0) return { cannotApply: true, reason: 'Speed limit scalar (VMax 250 km/h) not located — binary may be a different calibration variant. Manual processing required.' };
+
+    // Patch 0x00FA → 0xFF7F (32767 km/h — effective no limit)
+    const limitOff = sigOff + 4;
+    const origVal = bytes[limitOff] | (bytes[limitOff + 1] << 8);
+    bytes[limitOff]     = 0xFF;
+    bytes[limitOff + 1] = 0x7F;
+
+    return {
+      cannotApply: false,
+      patchCount: 1,
+      patches: [
+        `✅ VMax scalar patched @ 0x${limitOff.toString(16).toUpperCase()}: ${origVal} km/h (0x${origVal.toString(16).toUpperCase()}) → 32767 km/h (0x7FFF) — speed limiter removed`
+      ],
+      checksumRequired: true,
+      technicalNotes: `SIMOS PCR2.1 Speed Limiter Removal — VMax patched from ${origVal} km/h to 32767 km/h. Vehicle will no longer be electronically limited. Checksum recalculation required before flashing.`
     };
   }
 

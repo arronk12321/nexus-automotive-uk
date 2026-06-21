@@ -1398,7 +1398,45 @@ footer {
   .stats-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
+/* ── Service checkbox grid ────────────────────────────────────── */
+.service-checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(185px, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+}
+.svc-chk {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  cursor: pointer;
+}
+.svc-chk input[type="checkbox"] { display: none; }
+.svc-chk > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  background: var(--card);
+  border: 1.5px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  transition: all 0.18s;
+  user-select: none;
+}
+.svc-chk input:checked + span {
+  border-color: var(--accent);
+  color: #fff;
+  background: rgba(0,178,255,0.10);
+}
+.svc-chk > span:hover { border-color: rgba(0,178,255,0.4); color: #fff; }
+.svc-chk-icon { font-size: 1rem; }
+
 @media (max-width: 600px) {
+  .service-checkbox-grid { grid-template-columns: 1fr 1fr; }
   .section { padding: 4rem 0; }
   .services-grid { grid-template-columns: 1fr; }
   .hiw-grid { grid-template-columns: 1fr; }

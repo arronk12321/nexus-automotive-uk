@@ -311,21 +311,22 @@
                 <label>Registration</label>
                 <input type="text" name="registration" placeholder="e.g. AB19 XYZ" style="text-transform:uppercase">
               </div>
-              <div class="form-group">
-                <label>Required Service *</label>
-                <select name="service" id="service-select" required>
-                  <option value="">— Select a service —</option>
-                  <option>Stage 1 Remapping</option>
-                  <option>EGR Delete</option>
-                  <option>DPF Delete</option>
-                  <option>AdBlue Delete</option>
-                  <option>Pops &amp; Bangs</option>
-                  <option>Swirl Flap Delete</option>
-                  <option>Speed Limiter Removal</option>
-                  <option>Start/Stop Disable</option>
-                  <option>TCU/DSG Gearbox Tuning</option>
-                  <option>Immo Off / ECU Solutions</option>
-                </select>
+              <div class="form-group" style="grid-column:1/-1">
+                <label>Required Services * <span style="font-size:0.78rem;color:var(--grey);font-weight:400">(select one or more)</span></label>
+                <div class="service-checkbox-grid" id="service-checkbox-grid">
+                  <label class="svc-chk"><input type="checkbox" name="services" value="EGR Delete"><span><span class="svc-chk-icon">🔧</span>EGR Delete</span></label>
+                  <label class="svc-chk"><input type="checkbox" name="services" value="DPF Delete"><span><span class="svc-chk-icon">💨</span>DPF Delete</span></label>
+                  <label class="svc-chk"><input type="checkbox" name="services" value="Swirl Flap Delete"><span><span class="svc-chk-icon">🌀</span>Swirl Flap Delete</span></label>
+                  <label class="svc-chk"><input type="checkbox" name="services" value="Speed Limiter Removal"><span><span class="svc-chk-icon">🏎️</span>Speed Limiter Removal</span></label>
+                  <label class="svc-chk"><input type="checkbox" name="services" value="AdBlue Delete"><span><span class="svc-chk-icon">🔵</span>AdBlue Delete</span></label>
+                  <label class="svc-chk"><input type="checkbox" name="services" value="Stage 1 Remapping"><span><span class="svc-chk-icon">⚡</span>Stage 1 Remapping</span></label>
+                  <label class="svc-chk"><input type="checkbox" name="services" value="Pops &amp; Bangs"><span><span class="svc-chk-icon">🔥</span>Pops &amp; Bangs</span></label>
+                  <label class="svc-chk"><input type="checkbox" name="services" value="Start/Stop Disable"><span><span class="svc-chk-icon">🔋</span>Start/Stop Disable</span></label>
+                  <label class="svc-chk"><input type="checkbox" name="services" value="TCU/DSG Gearbox Tuning"><span><span class="svc-chk-icon">⚙️</span>TCU/DSG Gearbox Tuning</span></label>
+                  <label class="svc-chk"><input type="checkbox" name="services" value="Immo Off / ECU Solutions"><span><span class="svc-chk-icon">🔑</span>Immo Off / ECU Solutions</span></label>
+                </div>
+                <input type="hidden" id="service-select" name="service" id="service-value">
+                <div id="service-error-msg" style="display:none;color:#f87171;font-size:0.82rem;margin-top:6px">⚠️ Please select at least one service</div>
               </div>
             </div>
 
@@ -459,7 +460,7 @@
 
 <!-- Scripts -->
 <script src="assets/js/ecu-processor.js?v=20260621"></script>
-<script src="assets/js/main.js?v=20260621l"></script>
+<script src="assets/js/main.js?v=20260621m"></script>
 
 </body>
 </html>

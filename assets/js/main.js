@@ -152,14 +152,35 @@ function renderServices() {
 }
 
 function selectService(name) {
-  state.selectedService = name;
+  // Toggle this service in the multi-select checkboxes (if on page)
+  const checkboxes = document.querySelectorAll('input[name="services"]');
+  if (checkboxes.length) {
+    const cb = Array.from(checkboxes).find(c => c.value === name);
+    if (cb) cb.checked = !cb.checked;
+    updateServiceHiddenInput();
+  }
+  // Also highlight service cards / sidebar items
   document.querySelectorAll('.service-card').forEach(el =>
     el.classList.toggle('selected', el.dataset.service === name));
   document.querySelectorAll('.sidebar-svc').forEach(el =>
     el.classList.toggle('active', el.dataset.service === name));
-  const sel = document.getElementById('service-select');
-  if (sel) sel.value = name;
   document.getElementById('order')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function updateServiceHiddenInput() {
+  const checked = Array.from(document.querySelectorAll('input[name="services"]:checked')).map(c => c.value);
+  const hidden = document.getElementById('service-select');
+  if (hidden) hidden.value = checked.join(', ');
+  // Sync checkboxes with service cards / sidebar
+  document.querySelectorAll('.service-card').forEach(el =>
+    el.classList.toggle('selected', checked.includes(el.dataset.service)));
+  document.querySelectorAll('.sidebar-svc').forEach(el =>
+    el.classList.toggle('active', checked.includes(el.dataset.service)));
+  // Hide error if something is now selected
+  if (checked.length) {
+    const errEl = document.getElementById('service-error-msg');
+    if (errEl) errEl.style.display = 'none';
+  }
 }
 
 // ── File Upload ────────────────────────────────────────────────────
@@ -214,8 +235,15 @@ function setupOrderForm() {
   form.addEventListener('submit', async e => {
     e.preventDefault();
     const data = new FormData(form);
-    const service = data.get('service') || state.selectedService;
-    if (!service)                  { toast('Please select a service first', 'error'); return; }
+    // Multi-service: collect all checked checkboxes, fall back to hidden input or old state
+    const checkedServices = Array.from(document.querySelectorAll('input[name="services"]:checked')).map(c => c.value);
+    const service = checkedServices.length ? checkedServices.join(', ') : (data.get('service') || '');
+    if (!service) {
+      const errEl = document.getElementById('service-error-msg');
+      if (errEl) errEl.style.display = 'block';
+      toast('Please select at least one service', 'error');
+      return;
+    }
     if (!state.uploadedFileData)   { toast('Please upload your ECU file', 'error'); return; }
 
     const order = {
@@ -486,6 +514,11 @@ document.addEventListener('DOMContentLoaded', () => {
   setupNav();
   initFadeUp();
   animateHeroProgress();
+
+  // Wire multi-select checkboxes
+  document.querySelectorAll('input[name="services"]').forEach(cb => {
+    cb.addEventListener('change', updateServiceHiddenInput);
+  });
 
   window.selectService = selectService;
 });

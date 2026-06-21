@@ -10,7 +10,8 @@ const PortalApp = (() => {
   let allOrders = [];
 
   // ── AI Processing Services ──────────────────────────────────────
-  const AI_AUTO_SERVICES = ['Start/Stop Disable', 'Speed Limiter Removal', 'Swirl Flap Delete', 'EGR Delete'];
+  const AI_AUTO_SERVICES = ['Start/Stop Disable', 'Speed Limiter Removal', 'Swirl Flap Delete', 'EGR Delete',
+                             'Stage 1 Remap', 'Speed Limiter Removal'];
   const AI_REVIEW_SERVICES = ['Stage 1 Remap', 'DPF Delete', 'AdBlue Delete', 'Pops & Bangs', 'TCU/DSG Tuning', 'Immo Off / ECU Solutions'];
 
   // ── Firestore REST helpers (bypass SDK transport issues on Safari) ──
@@ -509,10 +510,12 @@ const PortalApp = (() => {
   function setupServiceGrid() {
     document.querySelectorAll('.service-option').forEach(el => {
       el.addEventListener('click', () => {
-        document.querySelectorAll('.service-option').forEach(s => s.classList.remove('selected'));
-        el.classList.add('selected');
-        document.getElementById('ordService').value = el.dataset.service;
-        document.getElementById('serviceError').classList.add('hidden');
+        el.classList.toggle('selected');
+        // Collect all selected services and join with comma
+        const selected = Array.from(document.querySelectorAll('.service-option.selected'))
+          .map(s => s.dataset.service);
+        document.getElementById('ordService').value = selected.join(', ');
+        if (selected.length) document.getElementById('serviceError').classList.add('hidden');
       });
     });
   }
@@ -622,12 +625,15 @@ const PortalApp = (() => {
           const result = ECUProcessor.analyseFile(arrayBuffer, file.name, service);
           aiReport = result.report || [];
 
-          if (AI_AUTO_SERVICES.includes(service) && result.canAutoProcess) {
+          // Multi-service: check if ANY of the selected services is auto-processable
+          const serviceList = service.split(',').map(s => s.trim());
+          const hasAutoService = serviceList.some(s => AI_AUTO_SERVICES.includes(s));
+
+          if (hasAutoService && result.canAutoProcess) {
             setStatus('🤖 Applying AI modifications...', 'info');
             const modified = ECUProcessor.processFile(arrayBuffer, service, result.ecuInfo);
             if (modified) {
               const modBlob = new Blob([modified], { type: 'application/octet-stream' });
-              const modExt = file.name.split('.').pop();
               modifiedFileName = `NEXUS_${service.replace(/[^a-zA-Z0-9]/g,'_')}_${file.name}`;
               const modRef = storage.ref(`processed-files/${currentUser.uid}/modified_${Date.now()}_${modifiedFileName}`);
               await new Promise((resolve, reject) => {
