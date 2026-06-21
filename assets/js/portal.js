@@ -50,6 +50,105 @@ const PortalApp = (() => {
     return { id: result.name.split('/').pop() };
   }
 
+  // Decode a Firestore REST field value back to JS
+  function fromFsValue(val) {
+    if (!val) return null;
+    if ('nullValue' in val) return null;
+    if ('booleanValue' in val) return val.booleanValue;
+    if ('integerValue' in val) return parseInt(val.integerValue, 10);
+    if ('doubleValue' in val) return val.doubleValue;
+    if ('timestampValue' in val) return val.timestampValue; // ISO string
+    if ('stringValue' in val) return val.stringValue;
+    if ('arrayValue' in val) return (val.arrayValue.values || []).map(fromFsValue);
+    if ('mapValue' in val) {
+      const obj = {};
+      for (const [k, v] of Object.entries(val.mapValue.fields || {})) obj[k] = fromFsValue(v);
+      return obj;
+    }
+    return null;
+  }
+
+  function fromFsDoc(doc) {
+    const obj = {};
+    for (const [k, v] of Object.entries(doc.fields || {})) obj[k] = fromFsValue(v);
+    return obj;
+  }
+
+  // Parse a date that may be an ISO string (from REST) or a Firestore {seconds} object
+  function parseDate(val) {
+    if (!val) return null;
+    if (typeof val === 'string') return new Date(val);
+    if (val.seconds) return new Date(val.seconds * 1000);
+    return null;
+  }
+
+  async function fsGet(collection, docId) {
+    const token = await auth.currentUser.getIdToken(true);
+    const pid = window.NEXUS_FB_CONFIG.projectId;
+    const res = await fetch(
+      `https://firestore.googleapis.com/v1/projects/${pid}/databases/nexus/documents/${collection}/${docId}`,
+      { headers: { 'Authorization': `Bearer ${token}` } }
+    );
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`Firestore GET error ${res.status}`);
+    return fromFsDoc(await res.json());
+  }
+
+  async function fsSet(collection, docId, data) {
+    const token = await auth.currentUser.getIdToken(true);
+    const pid = window.NEXUS_FB_CONFIG.projectId;
+    const fields = {};
+    for (const [k, v] of Object.entries(data)) fields[k] = toFsValue(v);
+    const res = await fetch(
+      `https://firestore.googleapis.com/v1/projects/${pid}/databases/nexus/documents/${collection}/${docId}`,
+      {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields })
+      }
+    );
+    if (!res.ok) throw new Error(`Firestore SET error ${res.status}`);
+  }
+
+  async function fsUpdate(collection, docId, data) {
+    const token = await auth.currentUser.getIdToken(true);
+    const pid = window.NEXUS_FB_CONFIG.projectId;
+    const fieldPaths = Object.keys(data).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join('&');
+    const fields = {};
+    for (const [k, v] of Object.entries(data)) fields[k] = toFsValue(v);
+    const res = await fetch(
+      `https://firestore.googleapis.com/v1/projects/${pid}/databases/nexus/documents/${collection}/${docId}?${fieldPaths}`,
+      {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields })
+      }
+    );
+    if (!res.ok) throw new Error(`Firestore UPDATE error ${res.status}`);
+  }
+
+  async function fsQuery(collection, field, value) {
+    const token = await auth.currentUser.getIdToken(true);
+    const pid = window.NEXUS_FB_CONFIG.projectId;
+    const body = {
+      structuredQuery: {
+        from: [{ collectionId: collection }],
+        where: { fieldFilter: { field: { fieldPath: field }, op: 'EQUAL', value: toFsValue(value) } }
+      }
+    };
+    const res = await fetch(
+      `https://firestore.googleapis.com/v1/projects/${pid}/databases/nexus/documents:runQuery`,
+      {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      }
+    );
+    if (!res.ok) throw new Error(`Firestore QUERY error ${res.status}`);
+    const results = await res.json();
+    return results.filter(r => r.document).map(r => ({ id: r.document.name.split('/').pop(), ...fromFsDoc(r.document) }));
+  }
+
   // ── Init ───────────────────────────────────────────────────────
   function init() {
     if (!window.NEXUS_FB_CONFIG || window.NEXUS_FB_CONFIG.apiKey === 'YOUR_API_KEY') {
@@ -59,9 +158,6 @@ const PortalApp = (() => {
     try {
       if (!firebase.apps.length) firebase.initializeApp(window.NEXUS_FB_CONFIG);
       auth = firebase.auth();
-      db = firebase.firestore();
-      // Force long-polling so Safari (which blocks WebSockets) can reach Firestore
-      try { db.settings({ experimentalForceLongPolling: true, merge: true }); } catch(e) {}
       storage = firebase.storage();
       auth.onAuthStateChanged(handleAuthChange);
     } catch(e) {
@@ -105,8 +201,8 @@ const PortalApp = (() => {
 
   async function loadUserProfile() {
     try {
-      const doc = await db.collection('users').doc(currentUser.uid).get();
-      userProfile = doc.exists ? doc.data() : {};
+      const data = await fsGet('users', currentUser.uid);
+      userProfile = data || {};
       showPortal();
     } catch(e) {
       userProfile = {};
@@ -251,8 +347,7 @@ const PortalApp = (() => {
   async function loadOrders() {
     if (!currentUser) return;
     try {
-      const snap = await db.collection('orders').where('userId', '==', currentUser.uid).get();
-      allOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      allOrders = await fsQuery('orders', 'userId', currentUser.uid);
       renderDashboard();
       renderRecentOrders();
     } catch(e) { console.error('loadOrders error:', e); }
@@ -302,7 +397,7 @@ const PortalApp = (() => {
   function orderItemHTML(o) {
     const icons = { 'Stage 1 Remap': '⚡', 'EGR Delete': '🔧', 'DPF Delete': '💨', 'AdBlue Delete': '🔵', 'Pops & Bangs': '🔥', 'Swirl Flap Delete': '🌀', 'Speed Limiter Removal': '🏎️', 'Start/Stop Disable': '🔋', 'TCU/DSG Tuning': '⚙️', 'Immo Off / ECU Solutions': '🔑' };
     const icon = icons[o.service] || '📁';
-    const date = o.createdAt ? new Date(o.createdAt.seconds * 1000).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' }) : 'Pending';
+    const date = o.createdAt ? (parseDate(o.createdAt) || new Date()).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' }) : 'Pending';
     const aiTag = o.aiProcessed ? '<span style="font-size:0.7rem;color:#ce93d8;margin-left:6px">🤖 AI</span>' : '';
     return `<div class="order-item" onclick="PortalApp.openOrder('${o.id}')">
       <div class="order-item-left">
@@ -605,7 +700,7 @@ const PortalApp = (() => {
         lastName: document.getElementById('profLastName').value.trim(),
         phone: document.getElementById('profPhone').value.trim()
       };
-      await db.collection('users').doc(currentUser.uid).update(updates);
+      await fsUpdate('users', currentUser.uid, updates);
       userProfile = { ...userProfile, ...updates };
       document.getElementById('profileMsg').textContent = '✅ Profile updated!';
       document.getElementById('profileMsg').className = 'submit-status success mt-8';
