@@ -307,6 +307,21 @@ const AdminApp = (() => {
           return `<div class="admin-section">
             <h3>🤖 ECU Analysis <span style="font-size:0.72rem;font-weight:400;color:#4caf50;margin-left:8px">✓ Identified</span></h3>
             ${report ? renderECUReport(report, id) : '<div style="color:#f44336;font-size:0.83rem">Could not parse report — try re-analysing.</div>'}
+            <div style="margin-top:14px;padding-top:14px;border-top:1px solid #222">
+              ${order.tuneResult === 'auto_applied' ? `<div style="background:#0a2a0a;border:1px solid #2e7d32;border-radius:8px;padding:12px;margin-bottom:10px;font-size:0.82rem">
+                <div style="color:#4caf50;font-weight:600;margin-bottom:4px">✅ Tune Applied — ${order.tunePatchCount || 0} patch(es)</div>
+                <div style="color:#888">${order.tuneNotes || ''}</div>
+                ${order.tuneChecksumRequired ? '<div style="color:#ff9800;margin-top:6px">⚠️ Checksum recalculation recommended before flashing</div>' : ''}
+              </div>` : order.tuneResult === 'manual_required' ? `<div style="background:#2a1a0a;border:1px solid #e65100;border-radius:8px;padding:12px;margin-bottom:10px;font-size:0.82rem">
+                <div style="color:#ff9800;font-weight:600;margin-bottom:4px">⚠️ Manual Tune Required</div>
+                <div style="color:#888">${order.tuneNotes || 'AI could not identify exact offsets — manual tuning needed'}</div>
+              </div>` : ''}
+              <button class="btn-blue-sm" id="applyTuneBtn" onclick="AdminApp.applyTune('${id}')" style="background:linear-gradient(135deg,#1a6634,#0d4f28);font-size:0.83rem">
+                ⚙️ ${order.tuneResult === 'auto_applied' ? 'Re-Apply Tune' : 'Apply Tune & Send to Customer'}
+              </button>
+              <button class="btn-blue-sm" onclick="AdminApp.analyseECU('${id}')" style="margin-left:8px;opacity:0.7;font-size:0.75rem">🔄 Re-analyse</button>
+              <div id="tuneStatus" style="display:none;margin-top:10px;font-size:0.82rem;color:#888;line-height:1.6"></div>
+            </div>
           </div>`;
         }
         return `<div class="admin-section">
@@ -668,7 +683,260 @@ Respond with valid JSON only (no markdown):
 
 
 
-  return { init, logout, showView, openOrder, closeModal, saveOrderUpdate, uploadModifiedFile, quickStatus, filterTable, refreshOrders, analyseECU };
+
+  // ── Apply Tune ─────────────────────────────────────────────────────
+  async function applyTune(orderId) {
+    if (!openAIKey) { alert('OpenAI key not found in settings.'); return; }
+    const order = allOrders.find(o => o.id === orderId);
+    if (!order) return;
+    if (!order.originalFileUrl) { alert('No ECU file attached to this order.'); return; }
+    if (!order.ecuReport) { alert('Please run ECU Analysis first before applying a tune.'); return; }
+
+    const btn = document.getElementById('applyTuneBtn');
+    const statusEl = document.getElementById('tuneStatus');
+    const setStatus = (msg, color) => {
+      if (statusEl) { statusEl.style.display = 'block'; statusEl.style.color = color || '#aaa'; statusEl.innerHTML = msg; }
+    };
+    if (btn) { btn.disabled = true; btn.textContent = '⚙️ Processing...'; }
+
+    try {
+      let ecuReport = {};
+      try { ecuReport = JSON.parse(order.ecuReport); } catch(e) {}
+
+      setStatus('⬇️ Downloading original ECU binary...');
+      const dlUrl = order.originalFileUrl + (order.originalFileUrl.includes('?') ? '&' : '?') + '_nc=' + Date.now();
+      const dlRes = await fetch(dlUrl);
+      if (!dlRes.ok) throw new Error(`Download failed: HTTP ${dlRes.status}`);
+      const buffer = await dlRes.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      const fileSize = bytes.length;
+
+      setStatus(`📦 ${(fileSize/1024).toFixed(1)} KB downloaded. Extracting binary context for AI...`);
+
+      // Build hex windows — 12 evenly spaced + header + tail
+      const toHex = arr => Array.from(arr).map(b => b.toString(16).padStart(2,'0')).join('');
+      const hexWindows = [];
+      const numW = 12, winSize = 128;
+      hexWindows.push(`[HEADER offset=0x000000] ${toHex(bytes.slice(0, 512))}`);
+      for (let w = 0; w < numW; w++) {
+        const pct = w / (numW - 1);
+        const off = Math.min(Math.floor(pct * (fileSize - winSize)), fileSize - winSize);
+        hexWindows.push(`[offset=0x${off.toString(16).toUpperCase().padStart(6,'0')} dec=${off}] ${toHex(bytes.slice(off, off + winSize))}`);
+      }
+      hexWindows.push(`[TAIL offset=0x${(fileSize-256).toString(16).toUpperCase()}] ${toHex(bytes.slice(fileSize - 256))}`);
+
+      // Re-extract strings for context
+      const strs = []; let cur = '';
+      for (let i = 0; i < bytes.length; i++) {
+        const c = bytes[i];
+        if (c >= 32 && c <= 126) cur += String.fromCharCode(c);
+        else { if (cur.length >= 5) strs.push(cur); cur = ''; }
+      }
+      const uniqueStrs = [...new Set(strs)].filter(s => /[a-zA-Z0-9]/.test(s) && s.length <= 100);
+
+      setStatus('🤖 Asking AI for precise byte patches...');
+
+      const tunePrompt = `You are a senior automotive ECU tuning engineer. Your task is to provide EXACT byte-level patches to apply the requested modification to this ECU binary.
+
+ECU IDENTIFICATION (from prior analysis):
+Manufacturer: ${ecuReport.manufacturer || 'Unknown'}
+Platform: ${ecuReport.platform || 'Unknown'}
+Hardware Number: ${ecuReport.hardwareNumber || 'Unknown'}
+Software Version: ${ecuReport.softwareVersion || 'Unknown'}
+Calibration: ${ecuReport.calVersion || 'Unknown'}
+Vehicle: ${ecuReport.vehicleCompatibility || order.vehicle || 'Unknown'}
+Confidence: ${ecuReport.confidence || 0}%
+Checksum Type: ${ecuReport.checksum || 'Unknown'}
+Admin Notes from Analysis: ${ecuReport.adminNotes || 'None'}
+
+REQUESTED SERVICE: ${order.service}
+Customer Vehicle: ${order.vehicle || 'Not stated'}
+Customer Engine: ${order.engine || 'Not stated'}
+Customer ECU Note: ${order.ecuType || 'Not stated'}
+File Size: ${fileSize} bytes (${(fileSize/1024).toFixed(1)} KB)
+
+STRINGS EXTRACTED FROM BINARY:
+${uniqueStrs.slice(0, 150).join('\n')}
+
+HEX WINDOWS (${hexWindows.length} samples across full file):
+${hexWindows.join('\n')}
+
+INSTRUCTIONS:
+Using your knowledge of the ${ecuReport.manufacturer || ''} ${ecuReport.platform || ''} platform:
+1. Identify the exact byte offsets and values for the "${order.service}" modification
+2. Provide patches as decimal offsets with hex values
+3. Verify your patches are consistent with the hex samples provided
+4. If multiple instances of a map exist, patch all of them
+5. Include checksum recalculation info if the ECU requires it
+6. If you CANNOT determine exact offsets with reasonable confidence, set cannotApply to true
+
+Return valid JSON only, no markdown:
+{
+  "cannotApply": false,
+  "reason": "",
+  "patches": [
+    {
+      "offset": 12345,
+      "original": "ff8b00a0",
+      "replacement": "00000000",
+      "description": "EGR duty cycle map entry — zeroed to disable EGR"
+    }
+  ],
+  "checksumRequired": true,
+  "checksumInstructions": "e.g. Bosch EDC17 CRC32 block 0x0000-0x7FFB stored at 0x7FFC. Recalculate after patching.",
+  "technicalNotes": "Summary of what was changed and expected result",
+  "safetyLevel": "safe"
+}`;
+
+      const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openAIKey}` },
+        body: JSON.stringify({
+          model: 'gpt-4o',
+          messages: [
+            { role: 'system', content: 'You are an expert ECU tuning engineer. Return valid JSON only, no markdown.' },
+            { role: 'user', content: tunePrompt }
+          ],
+          temperature: 0.05,
+          max_tokens: 2500,
+          response_format: { type: 'json_object' }
+        })
+      });
+
+      if (!aiRes.ok) {
+        const errText = await aiRes.text();
+        throw new Error(`OpenAI error ${aiRes.status}: ${errText.slice(0,300)}`);
+      }
+
+      const aiData = await aiRes.json();
+      const rawText = (aiData.choices[0].message.content || '').trim();
+      let tuneResult;
+      try {
+        const m = rawText.match(/\{[\s\S]*\}/);
+        tuneResult = JSON.parse(m ? m[0] : rawText);
+      } catch(pe) { throw new Error('AI returned malformed JSON — try again'); }
+
+      if (tuneResult.cannotApply) {
+        await fsUpdate('orders', orderId, {
+          tuneAttemptedAt: new Date().toISOString(),
+          tuneResult: 'manual_required',
+          tuneNotes: tuneResult.reason || 'Unknown ECU or insufficient binary evidence',
+          status: 'processing'
+        });
+        const idx = allOrders.findIndex(o => o.id === orderId);
+        if (idx >= 0) Object.assign(allOrders[idx], { tuneResult: 'manual_required', tuneNotes: tuneResult.reason });
+        setStatus(`⚠️ AI cannot auto-apply: <b style="color:#fff">${tuneResult.reason || 'Insufficient ECU knowledge'}</b><br>Order flagged for manual processing.`, '#ff9800');
+        if (btn) { btn.disabled = false; btn.textContent = '⚙️ Retry Tune'; }
+        return;
+      }
+
+      const patches = tuneResult.patches || [];
+      if (patches.length === 0) throw new Error('AI returned no patches — try re-analysing the ECU first');
+
+      setStatus(`🔧 Applying ${patches.length} patch(es) to binary...`);
+
+      // Apply patches to a fresh copy of the buffer
+      const modified = new Uint8Array(buffer.byteLength);
+      modified.set(bytes);
+
+      let appliedCount = 0;
+      const patchLog = [];
+
+      for (const patch of patches) {
+        const offset = parseInt(patch.offset);
+        if (isNaN(offset) || offset < 0 || offset >= fileSize) {
+          patchLog.push(`⚠️ Skipped: offset ${patch.offset} out of range`);
+          continue;
+        }
+        const replHex = (patch.replacement || '').toLowerCase().replace(/[\s]/g, '');
+        if (!replHex || replHex.length % 2 !== 0) {
+          patchLog.push(`⚠️ Skipped: invalid replacement hex at offset ${patch.offset}`);
+          continue;
+        }
+        const replBytes = [];
+        for (let i = 0; i < replHex.length; i += 2) replBytes.push(parseInt(replHex.substr(i, 2), 16));
+
+        // Optionally verify original bytes (warn but still apply)
+        const origHex = (patch.original || '').toLowerCase().replace(/[\s]/g, '');
+        if (origHex && origHex.length >= 2) {
+          let mismatch = false;
+          for (let i = 0; i < origHex.length / 2; i++) {
+            const expected = parseInt(origHex.substr(i*2, 2), 16);
+            if (modified[offset + i] !== expected) { mismatch = true; break; }
+          }
+          if (mismatch) patchLog.push(`⚠️ Original byte mismatch at 0x${offset.toString(16).toUpperCase()} — applied anyway`);
+        }
+
+        for (let i = 0; i < replBytes.length; i++) {
+          if (offset + i < fileSize) modified[offset + i] = replBytes[i];
+        }
+        appliedCount++;
+        patchLog.push(`✅ 0x${offset.toString(16).toUpperCase().padStart(6,'0')}: ${patch.description || 'patched'}`);
+      }
+
+      if (appliedCount === 0) throw new Error('All patches were skipped — check ECU analysis result');
+
+      setStatus(`📤 Uploading modified file (${appliedCount} patches applied)...`);
+
+      // Upload via Firebase Storage REST API
+      const origName = order.originalFileName || 'ecu.bin';
+      const safeService = (order.service || 'MOD').replace(/[^a-zA-Z0-9]/g, '_');
+      const modName = `NEXUS_${safeService}_${origName}`;
+      const storageBucket = 'nexus-automotive-uk.firebasestorage.app';
+      const storagePath = `processed-files/${order.userId || 'admin'}/modified_${Date.now()}_${modName}`;
+      const encodedPath = encodeURIComponent(storagePath);
+      const uploadUrl = `https://firebasestorage.googleapis.com/v0/b/${storageBucket}/o/${encodedPath}`;
+
+      const uploadRes = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: modified
+      });
+      if (!uploadRes.ok) {
+        const errText = await uploadRes.text();
+        throw new Error(`Storage upload failed (${uploadRes.status}): ${errText.slice(0,200)}`);
+      }
+      const uploadData = await uploadRes.json();
+      const token = uploadData.downloadTokens;
+      const modifiedFileUrl = `https://firebasestorage.googleapis.com/v0/b/${storageBucket}/o/${encodedPath}?alt=media&token=${token}`;
+
+      // Save to Firestore
+      await fsUpdate('orders', orderId, {
+        modifiedFileUrl,
+        modifiedFileName: modName,
+        status: 'completed',
+        completedAt: new Date().toISOString(),
+        tuneAppliedAt: new Date().toISOString(),
+        tuneResult: 'auto_applied',
+        tunePatchCount: appliedCount,
+        tuneNotes: tuneResult.technicalNotes || '',
+        tuneChecksumRequired: tuneResult.checksumRequired || false,
+        tuneChecksumInstructions: tuneResult.checksumInstructions || '',
+        tunePatchLog: patchLog.join('\n'),
+        tuneSafetyLevel: tuneResult.safetyLevel || 'unknown'
+      });
+
+      const idx = allOrders.findIndex(o => o.id === orderId);
+      if (idx >= 0) Object.assign(allOrders[idx], {
+        modifiedFileUrl, modifiedFileName: modName, status: 'completed',
+        tuneResult: 'auto_applied', tunePatchCount: appliedCount,
+        tuneNotes: tuneResult.technicalNotes || '',
+        tuneChecksumRequired: tuneResult.checksumRequired || false
+      });
+
+      setStatus(`✅ Done! ${appliedCount} patches applied. Customer can now download from their portal.`, '#4caf50');
+      if (btn) btn.textContent = '✅ Tune Applied';
+      renderStats();
+      setTimeout(() => openOrder(orderId), 1200);
+
+    } catch(err) {
+      console.error('applyTune error:', err);
+      setStatus(`❌ ${err.message}`, '#f44336');
+      if (btn) { btn.disabled = false; btn.textContent = '⚙️ Apply Tune & Send to Customer'; }
+    }
+  }
+
+  return { init, logout, showView, openOrder, closeModal, saveOrderUpdate, uploadModifiedFile, quickStatus, filterTable, refreshOrders, analyseECU, applyTune };
 })();
 
 document.addEventListener('DOMContentLoaded', () => AdminApp.init());
