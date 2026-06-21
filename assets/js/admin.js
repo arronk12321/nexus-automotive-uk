@@ -447,38 +447,44 @@ const AdminApp = (() => {
     const warnings = Array.isArray(report.warnings) ? report.warnings : [];
     return `
       <div style="background:#111;border:1px solid #2a2a2a;border-radius:10px;padding:16px;margin-top:4px">
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;gap:12px">
           <div>
-            <div style="font-size:1.05rem;font-weight:700;color:#fff">${report.manufacturer || '—'} ${report.platform || ''}</div>
-            <div style="font-size:0.78rem;color:#666;margin-top:3px">${report.vehicleCompatibility || ''}</div>
+            <div style="font-size:1.1rem;font-weight:700;color:#fff;letter-spacing:0.3px">${report.manufacturer || '—'} ${report.platform || ''}</div>
+            ${report.hardwareNumber && report.hardwareNumber !== 'Unknown' ? `<div style="font-size:0.75rem;color:#555;margin-top:2px;font-family:monospace">HW: ${report.hardwareNumber}</div>` : ''}
+            <div style="font-size:0.78rem;color:#666;margin-top:4px">${report.vehicleCompatibility || ''}</div>
           </div>
-          <div style="text-align:right;flex-shrink:0;margin-left:12px">
-            <div style="font-size:1.2rem;font-weight:700;color:${confColor}">${report.confidence || '?'}%</div>
-            <div style="font-size:0.7rem;color:#555;text-transform:uppercase;letter-spacing:0.5px">confidence</div>
+          <div style="text-align:right;flex-shrink:0">
+            <div style="font-size:1.3rem;font-weight:700;color:${confColor}">${report.confidence || '?'}%</div>
+            <div style="font-size:0.68rem;color:#444;text-transform:uppercase;letter-spacing:0.5px">confidence</div>
+            ${report.confidenceReason ? `<div style="font-size:0.7rem;color:#555;margin-top:3px;max-width:160px;text-align:right;line-height:1.3">${report.confidenceReason}</div>` : ''}
           </div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
           <div style="background:#0d0d0d;border-radius:6px;padding:10px">
-            <div style="font-size:0.68rem;color:#555;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Software Version</div>
-            <div style="font-size:0.82rem;color:#e5e5e5;word-break:break-all">${report.softwareVersion || 'Unknown'}</div>
+            <div style="font-size:0.65rem;color:#555;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Software Version</div>
+            <div style="font-size:0.82rem;color:#e5e5e5;word-break:break-all;font-family:monospace">${report.softwareVersion || 'Unknown'}</div>
           </div>
           <div style="background:#0d0d0d;border-radius:6px;padding:10px">
-            <div style="font-size:0.68rem;color:#555;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Checksum Type</div>
-            <div style="font-size:0.82rem;color:#e5e5e5">${report.checksum || 'Unknown'}</div>
+            <div style="font-size:0.65rem;color:#555;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Cal Version</div>
+            <div style="font-size:0.82rem;color:#e5e5e5;font-family:monospace">${report.calVersion || 'Unknown'}</div>
           </div>
           <div style="background:#0d0d0d;border-radius:6px;padding:10px">
-            <div style="font-size:0.68rem;color:#555;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Risk Level</div>
-            <div style="font-size:0.85rem;font-weight:600;color:${riskColor}">${(report.riskLevel || 'unknown').toUpperCase()}</div>
+            <div style="font-size:0.65rem;color:#555;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Risk Level</div>
+            <div style="font-size:0.88rem;font-weight:600;color:${riskColor}">${(report.riskLevel || 'unknown').toUpperCase()}</div>
           </div>
           <div style="background:#0d0d0d;border-radius:6px;padding:10px">
-            <div style="font-size:0.68rem;color:#555;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Service Fit</div>
-            <div style="font-size:0.78rem;color:#e5e5e5;line-height:1.4">${report.serviceCompatibility || '—'}</div>
+            <div style="font-size:0.65rem;color:#555;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Checksum</div>
+            <div style="font-size:0.78rem;color:#e5e5e5">${report.checksum || 'Unknown'}</div>
           </div>
         </div>
-        ${report.adminNotes ? `<div style="background:#1a1500;border:1px solid #3a2f00;border-radius:6px;padding:10px;margin-bottom:10px"><div style="font-size:0.68rem;color:#ffc107;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Technician Note</div><div style="font-size:0.83rem;color:#ffe082">${report.adminNotes}</div></div>` : ''}
-        ${warnings.length ? `<div style="background:#1a0000;border:1px solid #3a0000;border-radius:6px;padding:10px;margin-bottom:10px">${warnings.map(w => `<div style="font-size:0.82rem;color:#ef9a9a;padding:2px 0">⚠️ ${w}</div>`).join('')}</div>` : ''}
-        ${report.additionalInfo ? `<div style="font-size:0.78rem;color:#555;margin-bottom:12px;line-height:1.5">${report.additionalInfo}</div>` : ''}
-        <button class="btn-blue-sm" onclick="AdminApp.analyseECU('${orderId}')" style="margin-top:4px;opacity:0.7">🔄 Re-analyse</button>
+        <div style="background:#0a1a0a;border:1px solid #1a3a1a;border-radius:6px;padding:10px;margin-bottom:10px">
+          <div style="font-size:0.65rem;color:#4caf50;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Service Assessment</div>
+          <div style="font-size:0.83rem;color:#c8e6c9;line-height:1.5">${report.serviceCompatibility || '—'}</div>
+        </div>
+        ${report.adminNotes ? `<div style="background:#1a1500;border:1px solid #3a2f00;border-radius:6px;padding:10px;margin-bottom:10px"><div style="font-size:0.65rem;color:#ffc107;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">⚙️ Technician Notes</div><div style="font-size:0.83rem;color:#ffe082;line-height:1.5">${report.adminNotes}</div></div>` : ''}
+        ${warnings.length ? `<div style="background:#1a0000;border:1px solid #3a0000;border-radius:6px;padding:10px;margin-bottom:10px">${warnings.map(w => `<div style="font-size:0.82rem;color:#ef9a9a;padding:3px 0;line-height:1.4">⚠️ ${w}</div>`).join('')}</div>` : ''}
+        ${report.additionalInfo ? `<div style="font-size:0.78rem;color:#555;margin-bottom:12px;line-height:1.6;border-top:1px solid #1a1a1a;padding-top:10px">${report.additionalInfo}</div>` : ''}
+        <button class="btn-blue-sm" onclick="AdminApp.analyseECU('${orderId}')" style="margin-top:4px;opacity:0.7;font-size:0.75rem">🔄 Re-analyse</button>
       </div>`;
   }
 
@@ -489,91 +495,140 @@ const AdminApp = (() => {
 
     const btn = document.getElementById('analyseBtn');
     const statusEl = document.getElementById('analyseStatus');
+    const setStatus = (msg, color) => {
+      if (statusEl) { statusEl.style.display = 'block'; statusEl.style.color = color || '#888'; statusEl.innerHTML = msg; }
+    };
     if (btn) { btn.disabled = true; btn.textContent = '🔄 Analysing...'; }
-    if (statusEl) { statusEl.style.display = 'block'; statusEl.style.color = '#888'; statusEl.textContent = '⬇️ Downloading ECU file...'; }
+    setStatus('⬇️ Downloading ECU binary file...');
 
     try {
-      const response = await fetch(order.originalFileUrl);
-      if (!response.ok) throw new Error('Could not download ECU file from Storage');
+      const dlUrl = order.originalFileUrl + (order.originalFileUrl.includes('?') ? '&' : '?') + '_nc=' + Date.now();
+      const response = await fetch(dlUrl);
+      if (!response.ok) throw new Error(`Could not download ECU file (HTTP ${response.status}). Check Storage permissions.`);
       const buffer = await response.arrayBuffer();
       const bytes = new Uint8Array(buffer);
 
-      if (statusEl) statusEl.textContent = '🔍 Extracting binary features...';
-
       const fileSizeBytes = bytes.length;
       const fileSizeKB = (fileSizeBytes / 1024).toFixed(1);
-      const toHex = arr => Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join(' ');
+      const fileSizeMB = (fileSizeBytes / 1048576).toFixed(3);
+      setStatus(`📦 File downloaded: ${fileSizeKB} KB. Scanning full binary for ECU signatures...`);
 
-      // First 256 bytes (file header / magic bytes)
-      const header = toHex(bytes.slice(0, 256));
-      // Bytes 256–512 (often contains ECU identifiers)
-      const mid = toHex(bytes.slice(256, 512));
-      // Last 128 bytes (footer / checksum area)
-      const footer = toHex(bytes.slice(-128));
-
-      // Extract printable ASCII strings ≥ 4 chars from first 64KB
-      const strings = [];
+      // ── 1. FULL FILE STRING EXTRACTION ─────────────────────────────────────
+      const allStrings = [];
       let cur = '';
-      const limit = Math.min(bytes.length, 65536);
-      for (let i = 0; i < limit; i++) {
+      for (let i = 0; i < bytes.length; i++) {
         const c = bytes[i];
         if (c >= 32 && c <= 126) { cur += String.fromCharCode(c); }
-        else { if (cur.length >= 4) strings.push(cur); cur = ''; }
+        else { if (cur.length >= 5) allStrings.push(cur); cur = ''; }
       }
-      if (cur.length >= 4) strings.push(cur);
-      const uniqueStrings = [...new Set(strings)].filter(s => s.length <= 80).slice(0, 100).join('\n');
+      if (cur.length >= 5) allStrings.push(cur);
+      const uniqueStrings = [...new Set(allStrings)].filter(s => /[a-zA-Z0-9]/.test(s) && s.length <= 100);
 
-      if (statusEl) statusEl.textContent = '🤖 Sending to GPT-4o for analysis...';
+      // ── 2. ECU KEYWORD DETECTION ────────────────────────────────────────────
+      const ecuKeywords = [
+        'BOSCH','EDC15','EDC16','EDC17','ME7','ME9','ME17','ME18','MED9','MED17','MD1','MG1',
+        'SIMOS','SID','SID205','SID305','SID307','PCR2','EMS31','SIM2K','SIM28','SIM29',
+        'DELPHI','DCM3','DCM6','MT80','MT86','MT92',
+        'SIEMENS','CONTINENTAL','CONTI',
+        'DENSO','MARELLI','MAGNETI','HITACHI',
+        'TRICORE','TC1766','TC1796','TC1797','TC1798',
+        'DME','DDE','ECM','PCM','TCU',
+        'VAG','VOLKSWAGEN','AUDI','BMW','FORD','VAUXHALL','OPEL','RENAULT','PEUGEOT','CITROEN','MERCEDES'
+      ];
+      const textContent = uniqueStrings.join(' ').toUpperCase();
+      const foundKeywords = ecuKeywords.filter(kw => textContent.includes(kw));
 
-      const prompt = `You are an expert automotive ECU binary file analyst with deep knowledge of all major ECU platforms: Bosch (EDC15/16/17, ME7/9/17/18, MED9/17, MD1, MG1), Siemens/Continental (SID305/307, PCR2.1, EMS3132, SIM2K), Delphi (DCM3.5/6.2, MT80/86), Denso, Magneti Marelli (6J, 8G, 8GMK), Simos (7/8.1/10/18/19), Tricore platforms, and all others.
+      // ── 3. HIGH-VALUE STRING CLASSIFICATION ────────────────────────────────
+      const partNumbers = uniqueStrings.filter(s => /^\d{7,12}$/.test(s.trim()));
+      const versionStrings = uniqueStrings.filter(s => /\b\d+\.\d+/.test(s) && s.length < 40);
+      const swHwStrings = uniqueStrings.filter(s => /sw|hw|cal|par|prg|nr\b/i.test(s) && s.length < 60);
+      const alphaCodes = uniqueStrings.filter(s => s.length >= 6 && s.length <= 22 && /[A-Z]/.test(s) && /\d/.test(s));
 
-Analyse this ECU .bin file:
+      const highValueStrings = [...new Set([
+        ...partNumbers.slice(0, 25),
+        ...versionStrings.slice(0, 25),
+        ...swHwStrings.slice(0, 20),
+        ...alphaCodes.slice(0, 40)
+      ])].slice(0, 100);
 
-FILE SIZE: ${fileSizeBytes} bytes (${fileSizeKB} KB)
-REQUESTED SERVICE: ${order.service}
-VEHICLE: ${order.vehicle || 'Unknown'}
-ENGINE: ${order.engine || 'Unknown'}
-CUSTOMER-STATED ECU: ${order.ecuType || 'Not specified'}
-REG PLATE: ${order.reg || 'Unknown'}
+      // ── 4. HEX SAMPLING (8 windows across full file) ───────────────────────
+      const toHexLine = arr => Array.from(arr).map(b => b.toString(16).padStart(2,'0')).join('');
+      const hexSamples = [];
+      const numWindows = 8, windowSize = 64;
+      for (let w = 0; w < numWindows; w++) {
+        const pct = numWindows > 1 ? w / (numWindows - 1) : 0;
+        const offset = Math.min(Math.floor(pct * (fileSizeBytes - windowSize)), fileSizeBytes - windowSize);
+        hexSamples.push(`[0x${offset.toString(16).toUpperCase().padStart(6,'0')}] ${toHexLine(bytes.slice(offset, offset + windowSize))}`);
+      }
 
-BYTES 0-255 (hex):
-${header}
+      setStatus(`🔍 Found ${uniqueStrings.length} strings, ${foundKeywords.length} keyword(s): <b style="color:#fff">${foundKeywords.join(', ') || 'none yet'}</b>. Sending to GPT-4o...`);
 
-BYTES 256-511 (hex):
-${mid}
+      // ── 5. BUILD AI PROMPT ──────────────────────────────────────────────────
+      const prompt = `You are a world-class automotive ECU binary analyst. Identify the ECU platform from the binary evidence below as precisely as possible.
 
-LAST 128 BYTES (hex):
-${footer}
+Supported platforms: Bosch (EDC15/16/17, ME7/ME9/ME17/ME18, MED9/MED17, MD1/MG1), Siemens/Continental (SID205/305/307, PCR2.1, EMS3132), Delphi (DCM3.5/6.1/6.2, MT80/86/92), Simos (6/7/8/10/18/19), Denso, Magneti Marelli, Hitachi, Mitsubishi, and all others.
 
-EXTRACTED ASCII STRINGS (first 64KB):
-${uniqueStrings}
+FILE METADATA:
+Size: ${fileSizeBytes} bytes (${fileSizeKB} KB / ${fileSizeMB} MB)
+Known ECU sizes: 128KB=131072 | 256KB=262144 | 512KB=524288 | 1MB=1048576 | 2MB=2097152 | 4MB=4194304
+Requested service: ${order.service}
+Vehicle (customer stated): ${order.vehicle || 'Unknown'}
+Engine (customer stated): ${order.engine || 'Unknown'}
+ECU type (customer stated): ${order.ecuType || 'Not specified'}
+Reg plate: ${order.reg || 'Unknown'}
 
-Common ECU file sizes for reference: 128KB=131072, 256KB=262144, 512KB=524288, 1MB=1048576, 2MB=2097152, 4MB=4194304.
+ECU KEYWORDS DETECTED IN BINARY:
+${foundKeywords.length > 0 ? foundKeywords.join(', ') : 'None matched'}
 
-Respond ONLY with a valid JSON object, no markdown wrapping:
+HIGH-VALUE STRINGS (part numbers / version refs / SW-HW codes):
+${highValueStrings.join('\n') || 'None'}
+
+ALL ASCII STRINGS FROM FULL FILE SCAN:
+${uniqueStrings.slice(0, 200).join('\n') || 'None'}
+
+HEX SAMPLES (8 windows across full file, 64 bytes each):
+${hexSamples.join('\n')}
+
+TASK: Cross-reference file size + keywords + part numbers + version strings + hex patterns.
+If customer stated an ECU type, validate it against the binary evidence.
+Be specific — e.g. "EDC17C10" not just "EDC17". Explain confidence level briefly.
+
+Respond with valid JSON only (no markdown):
 {
   "manufacturer": "e.g. Bosch",
   "platform": "e.g. EDC17C10",
+  "hardwareNumber": "e.g. 0 281 015 xxx or Unknown",
   "softwareVersion": "e.g. 1037395048 or Unknown",
-  "vehicleCompatibility": "e.g. VW/Audi 2.0 TDI (140bhp) 2008-2012",
-  "confidence": 87,
-  "serviceCompatibility": "concise assessment: is the requested service compatible and safe for this ECU?",
+  "calVersion": "calibration version if found, or Unknown",
+  "vehicleCompatibility": "e.g. VW/Audi 2.0 TDI 140bhp 2008-2012 (CBEA/CJAA)",
+  "confidence": 92,
+  "confidenceReason": "brief reason e.g. EDC17C10 string at 0x1200 + 512KB matches known size",
+  "serviceCompatibility": "Specific: is ${order.service} supported/safe on this ECU? Note any tool or protocol requirements.",
   "riskLevel": "low",
-  "checksum": "e.g. Bosch CRC32 at 0xFFFC or Unknown",
-  "adminNotes": "key action notes for the technician",
-  "warnings": ["any critical warnings, empty array if none"],
-  "additionalInfo": "any other useful technical details the admin should know"
+  "checksum": "e.g. Bosch CRC32 at last 4 bytes of each block, or Unknown",
+  "adminNotes": "Specific actionable notes for the technician performing this service",
+  "warnings": [],
+  "additionalInfo": "Other useful technical details: quirks, required tools, OBD protocol, etc."
 }`;
 
       const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openAIKey}` },
-        body: JSON.stringify({ model: 'gpt-4o', messages: [{ role: 'user', content: prompt }], temperature: 0.1, max_tokens: 900 })
+        body: JSON.stringify({
+          model: 'gpt-4o',
+          messages: [
+            { role: 'system', content: 'You are an expert automotive ECU binary analyst. Respond with valid JSON only, no markdown.' },
+            { role: 'user', content: prompt }
+          ],
+          temperature: 0.1,
+          max_tokens: 1400,
+          response_format: { type: 'json_object' }
+        })
       });
 
       if (!aiRes.ok) {
         const errText = await aiRes.text();
-        throw new Error(`OpenAI ${aiRes.status}: ${errText.slice(0, 200)}`);
+        throw new Error(`OpenAI error ${aiRes.status}: ${errText.slice(0, 300)}`);
       }
 
       const aiData = await aiRes.json();
@@ -582,31 +637,36 @@ Respond ONLY with a valid JSON object, no markdown wrapping:
       try {
         const match = rawText.match(/\{[\s\S]*\}/);
         report = JSON.parse(match ? match[0] : rawText);
-      } catch(pe) { throw new Error('AI returned non-JSON response — try again'); }
+      } catch(pe) { throw new Error('AI returned malformed JSON — try re-analysing'); }
 
-      // Save report to Firestore
       await fsUpdate('orders', orderId, {
         ecuReport: JSON.stringify(report),
         ecuDetected: `${report.manufacturer || ''} ${report.platform || ''}`.trim(),
         ecuConfidence: report.confidence || 0,
-        ecuAnalysedAt: new Date().toISOString()
+        ecuAnalysedAt: new Date().toISOString(),
+        ecuFoundKeywords: foundKeywords.join(', '),
+        ecuFileSize: fileSizeBytes,
+        ecuStringsFound: uniqueStrings.length
       });
 
       const idx = allOrders.findIndex(o => o.id === orderId);
       if (idx >= 0) Object.assign(allOrders[idx], {
         ecuReport: JSON.stringify(report),
         ecuDetected: `${report.manufacturer || ''} ${report.platform || ''}`.trim(),
-        ecuConfidence: report.confidence || 0
+        ecuConfidence: report.confidence || 0,
+        ecuFoundKeywords: foundKeywords.join(', ')
       });
 
-      openOrder(orderId); // refresh modal with report
+      openOrder(orderId);
 
     } catch(err) {
       console.error('ECU analysis error:', err);
-      if (statusEl) { statusEl.textContent = `❌ ${err.message}`; statusEl.style.color = '#f44336'; }
-      if (btn) { btn.disabled = false; btn.textContent = '🤖 Analyse ECU'; }
+      setStatus(`❌ ${err.message}`, '#f44336');
+      if (btn) { btn.disabled = false; btn.textContent = '🤖 Analyse ECU File'; }
     }
   }
+
+
 
   return { init, logout, showView, openOrder, closeModal, saveOrderUpdate, uploadModifiedFile, quickStatus, filterTable, refreshOrders, analyseECU };
 })();
