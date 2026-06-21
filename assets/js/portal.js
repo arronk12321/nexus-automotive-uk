@@ -11,7 +11,7 @@ const PortalApp = (() => {
 
   // ── AI Processing Services ──────────────────────────────────────
   const AI_AUTO_SERVICES = ['Start/Stop Disable', 'Speed Limiter Removal', 'Swirl Flap Delete', 'EGR Delete',
-                             'Stage 1 Remap', 'Speed Limiter Removal'];
+                             'Stage 1 Remap', 'DPF Delete'];
   const AI_REVIEW_SERVICES = ['Stage 1 Remap', 'DPF Delete', 'AdBlue Delete', 'Pops & Bangs', 'TCU/DSG Tuning', 'Immo Off / ECU Solutions'];
 
   // ── Firestore REST helpers (bypass SDK transport issues on Safari) ──

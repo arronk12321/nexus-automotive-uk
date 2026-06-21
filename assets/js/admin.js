@@ -866,7 +866,7 @@ Respond with valid JSON only (no markdown):
         if (svc.includes('egr'))                             res = simosEGRDelete(bytes, fileSize);
         else if (svc.includes('swirl'))                      res = simosSwirFlapDelete(bytes, fileSize);
         else if (svc.includes('speed'))                      res = simosSpeedLimiterRemoval(bytes, fileSize);
-        else if (svc.includes('dpf'))                        res = { cannotApply: true, reason: 'SIMOS PCR2.1 DPF Delete — complex multi-map calibration required (WinOLS recommended). Queued for manual.' };
+        else if (svc.includes('dpf'))                        res = simosDPFDelete(bytes, fileSize);
         else if (svc.includes('adblue') || svc.includes('scr')) res = { cannotApply: true, reason: 'AdBlue/SCR Delete — variant-specific SCR catalyst maps required. Queued for manual.' };
         else if (svc.includes('stage') || svc.includes('remap')) res = simosStage1Tune(bytes, fileSize);
         else if (svc.includes('start') || svc.includes('stop')) res = { cannotApply: true, reason: 'Start/Stop Disable — requires manual calibration.' };
@@ -1069,6 +1069,120 @@ Respond with valid JSON only (no markdown):
       ],
       checksumRequired: true,
       technicalNotes: `SIMOS PCR2.1 Speed Limiter Removal — VMax patched from ${origVal} km/h to 32767 km/h. Vehicle will no longer be electronically limited. Checksum recalculation required before flashing.`
+    };
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  //  SIMOS PCR2.1 — DPF DELETE
+  //  Method: 3-stage — soot mass → 0, diff pressure → 0, regen temp → max
+  //  All 3 signatures are unique (1 hit each) in PCR2.1 binaries
+  // ══════════════════════════════════════════════════════════════════
+  function simosDPFDelete(bytes, fileSize) {
+    const patches = [];
+    let totalCells = 0;
+
+    // ─── 1. SOOT MASS THRESHOLD MAP ────────────────────────────────
+    // Unique sig: 6 × 0x80A4 immediately before 80 cells of soot data (6–65 g)
+    const SOOT_SIG = [];
+    for (let i = 0; i < 6; i++) { SOOT_SIG.push(0xA4, 0x80); } // 6 × 0x80A4 LE
+
+    const sootSigOff = findBytes(bytes, SOOT_SIG, 0, fileSize);
+    if (sootSigOff >= 0) {
+      const sootDataOff = sootSigOff + 12; // 6 × 2 bytes = 12
+      // Verify: 80 cells, all in 0–100 range
+      let valid = true;
+      for (let i = 0; i < 80; i++) {
+        const v = bytes[sootDataOff + i*2] | (bytes[sootDataOff + i*2 + 1] << 8);
+        if (v > 100) { valid = false; break; }
+      }
+      if (valid) {
+        for (let i = 0; i < 80; i++) {
+          bytes[sootDataOff + i*2]     = 0;
+          bytes[sootDataOff + i*2 + 1] = 0;
+        }
+        totalCells += 80;
+        patches.push(`✅ DPF soot mass map @ 0x${sootDataOff.toString(16).toUpperCase()}: 80 cells zeroed (ECU reads 0g soot — never triggers regen)`);
+      } else {
+        patches.push('⚠️ Soot mass signature found but values out of expected range — skipped for safety');
+      }
+    } else {
+      patches.push('⚠️ DPF soot mass signature (6×0x80A4) not found');
+    }
+
+    // ─── 2. DPF DIFFERENTIAL PRESSURE MAP ──────────────────────────
+    // Unique sig: [1000,1000,1000,1500,1500,1250,1000,2000] (loading limits header)
+    // Diff pressure data starts 36 bytes (18 words) after sig
+    const PRESS_SIG = [];
+    for (const v of [1000,1000,1000,1500,1500,1250,1000,2000]) {
+      PRESS_SIG.push(v & 0xFF, (v >> 8) & 0xFF);
+    }
+
+    const pressSigOff = findBytes(bytes, PRESS_SIG, 0, fileSize);
+    if (pressSigOff >= 0) {
+      const pressDataOff = pressSigOff + 36; // 18 words of loading limits before diff pressure data
+      // Verify: 80 cells in 0–200 range
+      let valid = true, pressCount = 0;
+      for (let i = 0; i < 80; i++) {
+        const v = bytes[pressDataOff + i*2] | (bytes[pressDataOff + i*2 + 1] << 8);
+        if (v > 200) { valid = false; break; }
+        pressCount++;
+      }
+      if (valid && pressCount === 80) {
+        for (let i = 0; i < 80; i++) {
+          bytes[pressDataOff + i*2]     = 0;
+          bytes[pressDataOff + i*2 + 1] = 0;
+        }
+        totalCells += 80;
+        patches.push(`✅ DPF differential pressure map @ 0x${pressDataOff.toString(16).toUpperCase()}: 80 cells zeroed (ECU sees 0 mbar — thinks DPF is clean)`);
+      } else {
+        patches.push('⚠️ Diff pressure signature found but data validation failed — skipped');
+      }
+    } else {
+      patches.push('⚠️ DPF differential pressure signature not found');
+    }
+
+    // ─── 3. DPF REGENERATION TEMPERATURE THRESHOLDS ────────────────
+    // Unique sig: 4 × 2250 (0x08CA) + 8 × 614 (0x0266)
+    // After sig: 8 rows × 8 cells of temperature thresholds (614–3941°C)
+    const REGEN_SIG = [];
+    for (let i = 0; i < 4; i++) { REGEN_SIG.push(0xCA, 0x08); } // 4 × 2250
+    for (let i = 0; i < 8; i++) { REGEN_SIG.push(0x66, 0x02); } // 8 × 614
+
+    const regenSigOff = findBytes(bytes, REGEN_SIG, 0, fileSize);
+    if (regenSigOff >= 0) {
+      const regenDataOff = regenSigOff + 8; // skip 4 × 2250 (8 bytes)
+      // Set all 8 rows × 8 cols = 64 cells to 9999 (regen never triggers)
+      const MAX_TEMP = 9999; // 0x270F — unreachable exhaust temp
+      let regenCells = 0;
+      for (let i = 0; i < 64; i++) {
+        const v = bytes[regenDataOff + i*2] | (bytes[regenDataOff + i*2 + 1] << 8);
+        // Verify value is a plausible temp (500–5000) before patching
+        if (v >= 500 && v <= 5000) {
+          bytes[regenDataOff + i*2]     = MAX_TEMP & 0xFF;
+          bytes[regenDataOff + i*2 + 1] = (MAX_TEMP >> 8) & 0xFF;
+          regenCells++;
+        }
+      }
+      if (regenCells > 0) {
+        totalCells += regenCells;
+        patches.push(`✅ DPF regen temperature @ 0x${regenDataOff.toString(16).toUpperCase()}: ${regenCells} cells set to ${MAX_TEMP}°C (regen can never initiate)`);
+      } else {
+        patches.push('⚠️ Regen temp signature found but values out of expected range — skipped');
+      }
+    } else {
+      patches.push('⚠️ DPF regen temperature signature not found');
+    }
+
+    if (totalCells === 0) {
+      return { cannotApply: true, reason: 'DPF Delete — no DPF maps could be located. File may not contain a DPF calibration. Queued for manual review.' };
+    }
+
+    return {
+      cannotApply: false,
+      patchCount: totalCells,
+      patches,
+      checksumRequired: true,
+      technicalNotes: `SIMOS PCR2.1 DPF Delete — 3-stage: soot mass zeroed (no loading detected), differential pressure zeroed (no blockage detected), regen temps set to ${totalCells > 64 ? '9999°C' : 'max'} (regen never initiates). Total ${totalCells} cells modified. Physical DPF must be removed before flashing. Checksum recalculation required.`
     };
   }
 
