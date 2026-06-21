@@ -35,7 +35,7 @@ const PortalApp = (() => {
     const fields = {};
     for (const [k, v] of Object.entries(data)) fields[k] = toFsValue(v);
     const res = await fetch(
-      `https://firestore.googleapis.com/v1/projects/${pid}/databases/default/documents/${collection}`,
+      `https://firestore.googleapis.com/v1/projects/${pid}/databases/nexus/documents/${collection}`,
       {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
