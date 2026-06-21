@@ -34,9 +34,10 @@
         <li><a href="#services">Services</a></li>
         <li><a href="#how-it-works">How It Works</a></li>
         <li><a href="#order">Order</a></li>
-        <li><a href="#" onclick="showAdminLogin()">Admin</a></li>
+        <li><a href="portal.html">Customer Portal</a></li>
+        <li><a href="admin.html">Admin</a></li>
       </ul>
-      <a href="#order" class="btn btn-primary nav-cta btn-sm">Order Now</a>
+      <a href="portal.html" class="btn btn-primary nav-cta btn-sm">Get Started</a>
       <button class="hamburger" aria-label="Menu">
         <span></span><span></span><span></span>
       </button>
@@ -49,7 +50,8 @@
       <li><a href="#services" onclick="this.closest('.mobile-menu').classList.remove('open')">Services</a></li>
       <li><a href="#how-it-works" onclick="this.closest('.mobile-menu').classList.remove('open')">How It Works</a></li>
       <li><a href="#order" onclick="this.closest('.mobile-menu').classList.remove('open')">Order</a></li>
-      <li><a href="#" onclick="showAdminLogin()">Admin Portal</a></li>
+      <li><a href="portal.html">Customer Portal</a></li>
+      <li><a href="admin.html">Admin Portal</a></li>
     </ul>
   </div>
 
@@ -71,7 +73,7 @@
             Nexus Automotive UK offers professional ECU tuning files and vehicle software solutions. Upload your file, select your service — our AI-assisted platform analyses, modifies, and returns your optimised ECU file within hours.
           </p>
           <div class="hero-actions">
-            <a href="#order" class="btn btn-primary btn-lg">
+            <a href="portal.html" class="btn btn-primary btn-lg">
               <i class="fas fa-upload"></i> Upload ECU File
             </a>
             <a href="#services" class="btn btn-outline btn-lg">
@@ -400,14 +402,14 @@
           <div class="footer-heading">Company</div>
           <ul class="footer-links">
             <li><a href="#how-it-works">How It Works</a></li>
-            <li><a href="#order">Submit File</a></li>
-            <li><a href="#" onclick="showAdminLogin()">Admin Portal</a></li>
+            <li><a href="portal.html">Customer Portal</a></li>
+            <li><a href="admin.html">Admin Portal</a></li>
             <li><a href="https://wa.me/447700000000" target="_blank">Contact Us</a></li>
           </ul>
         </div>
       </div>
       <div class="footer-bottom">
-        <div class="footer-copy">© 2025 Nexus Automotive UK. All rights reserved.</div>
+        <div class="footer-copy">© 2026 Nexus Automotive UK. All rights reserved.</div>
         <div class="footer-disclaimer">
           ⚠️ <strong>Disclaimer:</strong> DPF Delete, AdBlue Delete, EGR Delete, Speed Limiter Removal and similar modifications are supplied for <strong>motorsport and off-road use only</strong> where applicable under local legislation. The customer is solely and entirely responsible for ensuring compliance with all applicable road traffic legislation in their local area. Nexus Automotive UK accepts no liability whatsoever for use of modified ECU files on public roads.
         </div>
@@ -416,80 +418,6 @@
   </footer>
 
 </div><!-- end #site-view -->
-
-<!-- ================================================================ ADMIN LOGIN OVERLAY -->
-<div id="login-overlay" style="display:none" class="login-overlay">
-  <div class="login-box">
-    <div class="login-logo">NEXUS <span>ADMIN</span></div>
-    <div class="login-sub">Enter your admin password to access the portal</div>
-    <div class="form-group" style="text-align:left">
-      <label>Password</label>
-      <input type="password" id="admin-password" placeholder="Enter password" onkeydown="if(event.key==='Enter')checkAdminLogin()">
-    </div>
-    <div style="display:flex;gap:0.75rem;margin-top:1rem">
-      <button class="btn btn-primary" onclick="checkAdminLogin()" style="flex:1">
-        <i class="fas fa-lock-open"></i> Login
-      </button>
-      <button class="btn btn-outline" onclick="document.getElementById('login-overlay').style.display='none'">Cancel</button>
-    </div>
-  </div>
-</div>
-
-<!-- ================================================================ ADMIN VIEW -->
-<div id="admin-view" style="display:none">
-  <aside class="admin-sidebar">
-    <div class="admin-logo">NEXUS <span>ADMIN</span></div>
-    <div class="admin-subtitle">Tuning File Management Portal</div>
-    <ul class="admin-nav">
-      <li><a href="#" class="active" onclick="renderAdmin()"><i class="fas fa-tachometer-alt"></i> Dashboard</a></li>
-      <li><a href="#" onclick="renderAdmin()"><i class="fas fa-file-code"></i> All Orders</a></li>
-    </ul>
-    <button class="admin-back" onclick="backToSite()">
-      <i class="fas fa-arrow-left"></i> Back to Website
-    </button>
-  </aside>
-  <main class="admin-main">
-    <div class="admin-topbar">
-      <div>
-        <div class="admin-page-title">Order Management</div>
-        <div class="admin-page-sub">View, price, process and return customer ECU files</div>
-      </div>
-      <div style="display:flex;gap:0.75rem;flex-wrap:wrap;align-items:center">
-        <input type="text" id="admin-search" placeholder="Search orders..." style="max-width:220px" oninput="renderOrdersTable()">
-        <button class="btn btn-primary btn-sm" onclick="renderAdmin()"><i class="fas fa-sync-alt"></i> Refresh</button>
-      </div>
-    </div>
-    <div id="admin-stats" class="stats-grid"></div>
-    <div class="admin-table-wrap">
-      <div class="table-header">
-        <div class="table-title">Orders</div>
-        <div class="table-filters">
-          <button class="filter-btn active" data-filter="all"    onclick="setAdminFilter('all')">All</button>
-          <button class="filter-btn"        data-filter="pending"    onclick="setAdminFilter('pending')">⏳ Pending</button>
-          <button class="filter-btn"        data-filter="processing" onclick="setAdminFilter('processing')">🔄 Processing</button>
-          <button class="filter-btn"        data-filter="completed"  onclick="setAdminFilter('completed')">✅ Completed</button>
-          <button class="filter-btn"        data-filter="rejected"   onclick="setAdminFilter('rejected')">❌ Rejected</button>
-        </div>
-      </div>
-      <table class="admin-table">
-        <thead>
-          <tr>
-            <th>Ref</th>
-            <th>Customer</th>
-            <th>Vehicle</th>
-            <th>Service</th>
-            <th>Status</th>
-            <th>Price</th>
-            <th>Date</th>
-          </tr>
-        </thead>
-        <tbody id="orders-tbody">
-          <tr><td colspan="7" style="text-align:center;color:var(--grey);padding:3rem">No orders yet</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </main>
-</div>
 
 <!-- ================================================================ PROCESSING MODAL -->
 <div class="modal-overlay" id="processing-modal">
@@ -530,8 +458,8 @@
 <div class="toast-container" id="toast-container"></div>
 
 <!-- Scripts -->
-<script src="assets/js/ecu-processor.js"></script>
-<script src="assets/js/main.js"></script>
+<script src="assets/js/ecu-processor.js?v=20260621"></script>
+<script src="assets/js/main.js?v=20260621l"></script>
 
 </body>
 </html>
