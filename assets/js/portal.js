@@ -523,9 +523,19 @@ const PortalApp = (() => {
         completedAt: orderStatus === 'completed' ? new Date() : null
       };
 
+      // Minimal connectivity test first
+      try {
+        await Promise.race([
+          db.collection('_test').add({ t: Date.now(), u: currentUser.uid }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('TEST WRITE timed out — Firestore unreachable from this browser')), 8000))
+        ]);
+      } catch(testErr) {
+        throw new Error('Cannot reach Firestore: ' + testErr.message);
+      }
+
       const docRef = await Promise.race([
         db.collection('orders').add(orderData),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Firestore timed out — check internet connection or Firestore rules')), 10000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Firestore order write timed out')), 15000))
       ]);
       allOrders.unshift({ id: docRef.id, ...orderData, createdAt: { seconds: Date.now() / 1000 } });
       renderDashboard();
