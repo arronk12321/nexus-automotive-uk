@@ -318,12 +318,14 @@ const AdminApp = (() => {
             ${report ? renderECUReport(report, id) : '<div style="color:#f44336;font-size:0.83rem">Could not parse report — try re-analysing.</div>'}
             <div style="margin-top:14px;padding-top:14px;border-top:1px solid #222">
               ${order.tuneResult === 'auto_applied' ? `<div style="background:#0a2a0a;border:1px solid #2e7d32;border-radius:8px;padding:12px;margin-bottom:10px;font-size:0.82rem">
-                <div style="color:#4caf50;font-weight:600;margin-bottom:4px">✅ Tune Applied — ${order.tunePatchCount || 0} patch(es)</div>
-                <div style="color:#888">${order.tuneNotes || ''}</div>
-                ${order.tuneChecksumRequired ? '<div style="color:#ff9800;margin-top:6px">⚠️ Checksum recalculation recommended before flashing</div>' : ''}
+                <div style="color:#4caf50;font-weight:600;margin-bottom:4px">✅ Tune Applied — ${order.tunePatchCount || 0} patch(es)
+                  <span style="font-size:0.7rem;padding:2px 6px;border-radius:4px;margin-left:8px;background:${order.tuneSafetyLevel === 'ai_guided' ? '#1a237e' : '#1b5e20'};color:${order.tuneSafetyLevel === 'ai_guided' ? '#82b1ff' : '#a5d6a7'}">${order.tuneSafetyLevel === 'ai_guided' ? '🧠 AI-Guided' : '⚡ Deterministic'}</span>
+                </div>
+                <div style="color:#888;white-space:pre-wrap">${order.tuneNotes || ''}</div>
+                ${order.tuneChecksumRequired ? '<div style="color:#ff9800;margin-top:6px">⚠️ Checksum recalculation required before flashing</div>' : ''}
               </div>` : order.tuneResult === 'manual_required' ? `<div style="background:#2a1a0a;border:1px solid #e65100;border-radius:8px;padding:12px;margin-bottom:10px;font-size:0.82rem">
                 <div style="color:#ff9800;font-weight:600;margin-bottom:4px">⚠️ Manual Tune Required</div>
-                <div style="color:#888">${order.tuneNotes || 'AI could not identify exact offsets — manual tuning needed'}</div>
+                <div style="color:#888;white-space:pre-wrap">${order.tuneNotes || 'AI could not identify maps with sufficient confidence — manual tuning needed'}</div>
               </div>` : ''}
               <button class="btn-blue-sm" id="applyTuneBtn" onclick="AdminApp.applyTune('${id}')" style="background:linear-gradient(135deg,#1a6634,#0d4f28);font-size:0.83rem">
                 ⚙️ ${order.tuneResult === 'auto_applied' ? 'Re-Apply Tune' : 'Apply Tune & Send to Customer'}
@@ -721,10 +723,19 @@ Respond with valid JSON only (no markdown):
       const ecuInfo = detectECUFromBinary(bytes, fileSize);
       setStatus(`🔍 Platform: <b>${ecuInfo.platform}</b> (${ecuInfo.confidence}% confidence) — Part: ${ecuInfo.part || 'n/a'}<br>Applying <b>${order.service}</b>...`);
 
-      // ── Step 2: Apply deterministic modification ─────────────────
+      // ── Step 2: Apply modification ──────────────────────────────
       const modified = new Uint8Array(buffer.byteLength);
       modified.set(bytes);
-      const result = applyDeterministicMod(modified, ecuInfo, order.service, fileSize);
+      let result;
+      if (ecuInfo.platform === 'SIMOS_PCR2') {
+        // Proven deterministic engine for SIMOS PCR2.1
+        result = applyDeterministicMod(modified, ecuInfo, order.service, fileSize);
+      } else {
+        // AI-guided pipeline: extract maps → GPT-4o identifies → deterministic patch
+        if (!openAIKey) await loadOpenAIKey();
+        if (!openAIKey) throw new Error('OpenAI API key not found. Add it in Firestore settings/openai to enable AI tuning.');
+        result = await aiGuidedTune(openAIKey, modified, fileSize, ecuInfo, order.service, setStatus);
+      }
 
       if (result.cannotApply) {
         await fsUpdate('orders', orderId, {
@@ -784,7 +795,7 @@ Respond with valid JSON only (no markdown):
         tuneNotes: result.technicalNotes || '',
         tuneChecksumRequired: result.checksumRequired || false,
         tunePatchLog: (result.patches || []).join('\n'),
-        tuneSafetyLevel: 'deterministic'
+        tuneSafetyLevel: ecuInfo.platform === 'SIMOS_PCR2' ? 'deterministic' : 'ai_guided'
       });
 
       const idx = allOrders.findIndex(o => o.id === orderId);
@@ -812,6 +823,259 @@ Respond with valid JSON only (no markdown):
       setStatus(`❌ ${err.message}`, '#f44336');
       if (btn) { btn.disabled = false; btn.textContent = '⚙️ Apply Tune & Send to Customer'; }
     }
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  //  AI-GUIDED TUNING ENGINE
+  //  For non-SIMOS ECUs: extract maps → GPT-4o identifies → patch
+  //  Pipeline: Binary → Map Extraction → AI Classification → Deterministic Patch
+  // ══════════════════════════════════════════════════════════════════
+
+  async function aiGuidedTune(apiKey, bytes, fileSize, ecuInfo, service, setStatus) {
+    const services = (service || '').split(',').map(s => s.trim()).filter(Boolean);
+
+    // ── Stage 1: Extract calibration map candidates ──────────────
+    setStatus('🧠 <b>AI Engine</b>: Scanning binary for calibration maps...');
+    const candidates = extractMapCandidates(bytes, fileSize);
+
+    if (candidates.length === 0) {
+      return { cannotApply: true, reason: 'AI Engine: No calibration map candidates found. File may be encrypted, compressed, or unsupported format. Manual processing required.' };
+    }
+
+    setStatus(`🧠 <b>AI Engine</b>: Found <b>${candidates.length}</b> calibration map candidates. Sending to GPT-4o for analysis...`);
+
+    // ── Stage 2: GPT-4o map identification ───────────────────────
+    const aiResult = await aiIdentifyMaps(apiKey, ecuInfo, candidates, services);
+
+    if (!aiResult || !aiResult.modifications || aiResult.modifications.length === 0) {
+      const reasons = (aiResult && aiResult.unresolved)
+        ? aiResult.unresolved.map(u => `${u.service}: ${u.reason}`).join('\n')
+        : 'AI could not identify target maps with sufficient confidence.';
+      return { cannotApply: true, reason: `AI Engine — no auto-modifications possible:\n${reasons}\nManual processing required (WinOLS).` };
+    }
+
+    setStatus(`🧠 <b>AI Engine</b>: ${aiResult.modifications.length} modification(s) identified. Applying patches...`);
+
+    // ── Stage 3: Deterministic patching based on AI guidance ─────
+    return applyAIGuidedPatches(bytes, candidates, aiResult, services);
+  }
+
+  // ── Extract candidate calibration maps from any ECU binary ──────
+  function extractMapCandidates(bytes, fileSize) {
+    const u16 = (off) => bytes[off] | (bytes[off + 1] << 8);
+    const scanStart = Math.floor(fileSize * 0.20);
+    const results = [];
+
+    // Single pass: contiguous blocks of uint16 ≤ 30000 (calibration range)
+    let blkStart = -1, blkLen = 0;
+    for (let i = scanStart; i < fileSize - 1; i += 2) {
+      const v = u16(i);
+      if (v <= 30000) {
+        if (blkStart < 0) blkStart = i;
+        blkLen++;
+      } else {
+        if (blkLen >= 32 && blkLen <= 2000) _evalMapBlock(bytes, blkStart, blkLen, results);
+        blkStart = -1; blkLen = 0;
+      }
+    }
+    if (blkLen >= 32 && blkLen <= 2000) _evalMapBlock(bytes, blkStart, blkLen, results);
+
+    results.sort((a, b) => b.quality - a.quality);
+    return results.slice(0, 30);
+  }
+
+  function _evalMapBlock(bytes, offset, cells, results) {
+    const u16 = (off) => bytes[off] | (bytes[off + 1] << 8);
+    let max = 0, min = 65535, sum = 0, nonZero = 0;
+    const vals = new Array(cells);
+    for (let i = 0; i < cells; i++) {
+      const v = u16(offset + i * 2);
+      vals[i] = v;
+      if (v > max) max = v;
+      if (v < min) min = v;
+      sum += v;
+      if (v > 0) nonZero++;
+    }
+
+    const unique = new Set(vals).size;
+    if (unique < 3) return;
+
+    const range = max - min || 1;
+    let sumStep = 0;
+    for (let i = 1; i < cells; i++) sumStep += Math.abs(vals[i] - vals[i - 1]);
+    const smooth = (sumStep / (cells - 1)) / range;
+    if (smooth > 0.8) return;
+
+    const mean = Math.round(sum / cells);
+
+    let rType = 'unknown';
+    if (max <= 100) rType = 'low_percent(0-100)';
+    else if (max <= 1200 && min < 300) rType = 'duty_cycle(0-100%)';
+    else if (min >= 400 && max <= 3500) rType = 'pressure(mbar)';
+    else if (max <= 5000) rType = 'torque_or_mass';
+    else if (max <= 12000) rType = 'fine_scale';
+    else rType = 'large_values';
+
+    const dims = [];
+    for (let r = 4; r <= Math.min(24, cells); r++) {
+      if (cells % r === 0) { const c = cells / r; if (c >= 4 && c <= 24) dims.push(`${r}x${c}`); }
+    }
+
+    results.push({
+      address: '0x' + offset.toString(16).toUpperCase(),
+      offset, cells,
+      min, max, mean, unique, nonZero,
+      smooth: +smooth.toFixed(3), rType,
+      dims: dims.length ? dims.join('|') : cells + 'x1',
+      first10: vals.slice(0, Math.min(10, cells)),
+      last10: vals.slice(Math.max(0, cells - 10)),
+      quality: unique * (1 - Math.min(smooth, 1)) * (dims.length > 0 ? 1.5 : 1)
+    });
+  }
+
+  // ── GPT-4o map identification ───────────────────────────────────
+  async function aiIdentifyMaps(apiKey, ecuInfo, candidates, services) {
+    let mapList = '';
+    candidates.forEach((c, i) => {
+      mapList += `MAP#${i + 1}: addr=${c.address}, ${c.cells}cells, vals=${c.min}-${c.max}(mean=${c.mean}), ` +
+        `uniq=${c.unique}, nz=${c.nonZero}, smooth=${c.smooth}, type=${c.rType}, dims=${c.dims}\n` +
+        `  first10=[${c.first10}] last10=[${c.last10}]\n`;
+    });
+
+    const prompt = `You are an expert automotive ECU calibration engineer specialising in binary remapping/tuning.
+
+ECU: ${ecuInfo.platform} ${ecuInfo.part || ''} (detection confidence: ${ecuInfo.confidence}%)
+REQUESTED SERVICES: ${services.join(', ')}
+
+I extracted ${candidates.length} candidate calibration map blocks from the binary. Each is a contiguous region of uint16 little-endian values bounded by values >30000.
+
+${mapList}
+
+FOR EACH REQUESTED SERVICE, identify the BEST matching map and specify the modification:
+
+SERVICE IDENTIFICATION GUIDE:
+• EGR Delete → EGR valve position/duty-cycle map. Values represent 0-100% (may be scaled x10 or x100). Shape: "dome" — higher at mid-RPM/load, low at idle and WOT. Action: zero_all.
+• DPF Delete → Soot accumulation model OR differential pressure threshold. Soot values increase with fuel quantity. Action: zero_all.
+• Speed Limiter Removal → VMax parameter. Very small block (1-8 cells), value near 250 (250 km/h). Action: set_32767.
+• Swirl Flap Delete → Swirl flap position map. Like EGR but typically smaller. Action: zero_all.
+• Stage 1 Remap → TWO maps: (1) Boost pressure target (1000-3000 mbar), action: scale_1.12_cap_2500. (2) Torque limiter (values 150-500 Nm range), action: scale_1.15_cap_5000. Need BOTH or mark unresolved.
+• AdBlue/SCR Delete → SCR catalyst efficiency or dosing map. Only on EU6+ diesel.
+• Pops & Bangs → Overrun fuel cut / ignition retard maps. Petrol/gasoline only.
+• Start/Stop Disable → Usually body controller, not engine ECU.
+• DTC Off / Fault Code Delete → DTC enable/disable table or diagnostic mask. Often scattered in code, not a clean map.
+• Hot Start Fix → Cranking fuel enrichment or start-of-injection map at high coolant temp.
+
+RESPOND WITH JSON:
+{
+  "modifications": [
+    { "service": "EGR Delete", "mapNumber": 5, "action": "zero_all", "confidence": 92, "reasoning": "brief explanation" }
+  ],
+  "unresolved": [
+    { "service": "Start/Stop Disable", "reason": "Not in engine ECU — body control module" }
+  ]
+}
+
+VALID ACTIONS: "zero_all", "set_max", "set_N" (e.g. set_32767), "scale_N" (e.g. scale_1.12), "scale_N_cap_M" (e.g. scale_1.12_cap_2500)
+
+RULES:
+1. Confidence must be >= 80% to include. Below 80% → unresolved.
+2. NEVER assign same map to two services.
+3. Stage 1 requires BOTH boost AND torque — if either missing, mark unresolved.
+4. Consider ECU type (EDC=diesel, MED=petrol turbo, etc).`;
+
+    const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: 'You are an expert automotive ECU tuning engineer. Respond with valid JSON only.' },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0,
+        max_tokens: 2000,
+        response_format: { type: 'json_object' }
+      })
+    });
+    if (!resp.ok) { const e = await resp.text(); throw new Error(`AI Engine: OpenAI ${resp.status}: ${e.slice(0, 200)}`); }
+    const data = await resp.json();
+    const raw = (data.choices[0].message.content || '').trim();
+    try { return JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] || raw); }
+    catch { throw new Error('AI Engine: GPT-4o returned invalid JSON — retry.'); }
+  }
+
+  // ── Deterministic patcher from AI instructions ──────────────────
+  function applyAIGuidedPatches(bytes, candidates, aiResult, requestedServices) {
+    const u16 = (off) => bytes[off] | (bytes[off + 1] << 8);
+    const patches = [], manualNeeded = [];
+    let totalPatched = 0;
+    const usedMaps = new Set();
+
+    for (const mod of (aiResult.modifications || [])) {
+      const idx = (mod.mapNumber || 0) - 1;
+      if (idx < 0 || idx >= candidates.length) { manualNeeded.push(`${mod.service}: invalid map ref #${mod.mapNumber}`); continue; }
+      if ((mod.confidence || 0) < 80) { manualNeeded.push(`${mod.service}: AI confidence ${mod.confidence}% (below 80% threshold). Manual required.`); continue; }
+      if (usedMaps.has(idx)) { manualNeeded.push(`${mod.service}: map #${mod.mapNumber} already used. Manual required.`); continue; }
+
+      const map = candidates[idx];
+      usedMaps.add(idx);
+      const action = (mod.action || '').toLowerCase().trim();
+
+      try {
+        if (action === 'zero_all') {
+          for (let i = 0; i < map.cells; i++) { bytes[map.offset + i*2] = 0; bytes[map.offset + i*2 + 1] = 0; }
+          patches.push(`✅ ${mod.service} — ${map.cells} cells zeroed at ${map.address} (${mod.confidence}%)\n   ${mod.reasoning || ''}`);
+          totalPatched += map.cells;
+        } else if (action === 'set_max') {
+          for (let i = 0; i < map.cells; i++) { bytes[map.offset + i*2] = 0xFF; bytes[map.offset + i*2 + 1] = 0xFF; }
+          patches.push(`✅ ${mod.service} — ${map.cells} cells → 65535 at ${map.address} (${mod.confidence}%)\n   ${mod.reasoning || ''}`);
+          totalPatched += map.cells;
+        } else if (action.startsWith('set_')) {
+          const val = parseInt(action.replace('set_', ''));
+          if (isNaN(val) || val < 0 || val > 65535) throw new Error('invalid value');
+          for (let i = 0; i < map.cells; i++) { bytes[map.offset + i*2] = val & 0xFF; bytes[map.offset + i*2 + 1] = (val >> 8) & 0xFF; }
+          patches.push(`✅ ${mod.service} — ${map.cells} cells → ${val} at ${map.address} (${mod.confidence}%)\n   ${mod.reasoning || ''}`);
+          totalPatched += map.cells;
+        } else if (action.startsWith('scale_')) {
+          const parts = action.replace('scale_', '').split('_cap_');
+          const factor = parseFloat(parts[0]);
+          const cap = parts[1] ? parseInt(parts[1]) : 65535;
+          if (isNaN(factor) || factor <= 0 || factor > 5) throw new Error('invalid factor');
+          for (let i = 0; i < map.cells; i++) {
+            const off = map.offset + i * 2;
+            const nv = Math.min(Math.round(u16(off) * factor), cap);
+            bytes[off] = nv & 0xFF; bytes[off + 1] = (nv >> 8) & 0xFF;
+          }
+          patches.push(`✅ ${mod.service} — ${map.cells} cells ×${factor}${cap < 65535 ? ' cap=' + cap : ''} at ${map.address} (${mod.confidence}%)\n   ${mod.reasoning || ''}`);
+          totalPatched += map.cells;
+        } else {
+          throw new Error(`unknown action "${action}"`);
+        }
+      } catch (e) {
+        manualNeeded.push(`${mod.service}: ${e.message}. Manual required.`);
+      }
+    }
+
+    for (const u of (aiResult.unresolved || [])) manualNeeded.push(`⚠️ ${u.service}: ${u.reason}`);
+
+    if (totalPatched === 0) {
+      return { cannotApply: true, reason: 'AI Engine — no modifications applied:\n' + manualNeeded.join('\n') };
+    }
+
+    const notes = '🧠 AI-GUIDED TUNING (GPT-4o Map Identification + Deterministic Patching)\n' +
+      '═'.repeat(55) + '\n' + patches.join('\n\n') +
+      (manualNeeded.length ? '\n\n⚠️ MANUAL PROCESSING NEEDED:\n' + manualNeeded.join('\n') : '') +
+      '\n\n⚡ Checksum recalculation required before flashing (WinOLS / ECMTitanium).' +
+      '\n📋 Admin: verify all AI-guided modifications before releasing to customer.';
+
+    return {
+      cannotApply: false,
+      patchCount: totalPatched,
+      patches,
+      checksumRequired: true,
+      manualRequired: manualNeeded.length > 0 ? manualNeeded : undefined,
+      technicalNotes: notes
+    };
   }
 
   // ══════════════════════════════════════════════════════════════════
@@ -852,6 +1116,30 @@ Respond with valid JSON only (no markdown):
     // Marelli MJD — Fiat, Alfa
     if (/MJD6\.|MJD8\.|MARELLI/i.test(ascii)) {
       return { platform: 'MARELLI_MJD', part: '', confidence: 80 };
+    }
+    // Bosch EDC16 — older diesel (2004-2012)
+    if (/EDC16[A-Z]\w{0,3}/i.test(ascii)) {
+      const m = ascii.match(/EDC16[A-Z]\w{0,3}/i);
+      return { platform: 'EDC16', part: m ? m[0].toUpperCase() : 'EDC16', confidence: 88 };
+    }
+    // Bosch MED17 / MEVD17 — petrol turbo
+    if (/MEVD?17/i.test(ascii)) {
+      const m = ascii.match(/MEVD?17[.\w]*/i);
+      return { platform: 'MED17', part: m ? m[0].toUpperCase() : 'MED17', confidence: 88 };
+    }
+    // Bosch MG1 / MD1 — newest generation (2017+)
+    if (/M[GD]1\w{2,}\d/i.test(ascii)) {
+      const m = ascii.match(/M[GD]1\w+/i);
+      return { platform: 'MG1', part: m ? m[0].toUpperCase() : 'MG1', confidence: 82 };
+    }
+    // Bosch ME7 / ME9 — older petrol
+    if (/\bME[79]\.\d/i.test(ascii)) {
+      const m = ascii.match(/ME[79]\.\d+/i);
+      return { platform: 'ME7_9', part: m ? m[0].toUpperCase() : 'ME7/9', confidence: 85 };
+    }
+    // Denso — Toyota, Mazda, Subaru
+    if (/DENSO|89663|175[78]0/i.test(ascii)) {
+      return { platform: 'DENSO', part: '', confidence: 75 };
     }
     return { platform: 'UNKNOWN', part: '', confidence: 0 };
   }

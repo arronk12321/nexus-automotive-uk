@@ -10,8 +10,9 @@ const PortalApp = (() => {
   let allOrders = [];
 
   // ── AI Processing Services ──────────────────────────────────────
-  const AI_AUTO_SERVICES = ['Start/Stop Disable', 'Speed Limiter Removal', 'Swirl Flap Delete', 'EGR Delete',
-                             'Stage 1 Remap', 'DPF Delete'];
+  // AI Engine handles any ECU — these services can be auto-attempted
+  const AI_AUTO_SERVICES = ['EGR Delete', 'DPF Delete', 'Speed Limiter Removal', 'Swirl Flap Delete',
+                             'Stage 1 Remap', 'AdBlue Delete', 'Start/Stop Disable', 'Hot Start Fix', 'DTC Off'];
   const AI_REVIEW_SERVICES = ['Stage 1 Remap', 'DPF Delete', 'AdBlue Delete', 'Pops & Bangs', 'TCU/DSG Tuning', 'Immo Off / ECU Solutions'];
 
   // ── Firestore REST helpers (bypass SDK transport issues on Safari) ──
